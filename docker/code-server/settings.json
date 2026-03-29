@@ -1,0 +1,19 @@
+{
+  "editor.fontSize": 14,
+  "editor.tabSize": 2,
+  "editor.minimap.enabled": false,
+  "editor.formatOnSave": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.wordWrap": "on",
+  "terminal.integrated.fontSize": 13,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "telemetry.telemetryLevel": "off",
+  "security.workspace.trust.enabled": false,
+  "extensions.autoUpdate": false,
+  "workbench.colorTheme": "Default Dark Modern",
+  "task.allowAutomaticTasks": "on",
+  "startupTerminals.terminals": [
+    { "name": "Dev Server", "command": "echo 'Configure your startup terminal commands in docker/code-server/settings.json'" }
+  ]
+}

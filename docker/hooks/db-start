@@ -1,0 +1,28 @@
+#!/bin/bash
+# hooks/db-start — Start the database after a snapshot
+#
+# Called by: isopod db save, isopod db restore
+# Env: CONTAINER — the Docker container name
+#
+# Implement this for your database. Should start the database and wait
+# for it to be ready before returning.
+#
+# Examples:
+#   PostgreSQL:
+#     docker exec "$CONTAINER" su postgres -c "pg_ctl start -D /pgdata -l /pgdata/logfile"
+#     for ((t=0; t<20; t+=2)); do
+#       docker exec "$CONTAINER" pg_isready -h localhost -U postgres &>/dev/null && exit 0
+#       sleep 2
+#     done
+#
+#   MySQL:
+#     docker exec "$CONTAINER" mysqld_safe &
+#     for ((t=0; t<20; t+=2)); do
+#       docker exec "$CONTAINER" mysqladmin ping &>/dev/null && exit 0
+#       sleep 2
+#     done
+
+set -euo pipefail
+
+echo "⚠ db-start hook not configured — implement this for your database"
+# docker exec "$CONTAINER" su postgres -c "pg_ctl start -D /pgdata -l /pgdata/logfile" 2>&1 || true

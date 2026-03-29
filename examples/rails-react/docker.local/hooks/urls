@@ -1,0 +1,11 @@
+#!/bin/bash
+# hooks/urls — Output service URLs for display after create/up
+#
+# Called by: isopod create, isopod up
+# Env: FEATURE_NAME — the pod name (used as hostname with OrbStack)
+
+set -euo pipefail
+
+printf "IDE\thttps://${FEATURE_NAME}.orb.local:8443\n"
+printf "API\thttps://${FEATURE_NAME}.orb.local:3000\n"
+printf "Frontend\thttps://${FEATURE_NAME}.orb.local:4000\n"

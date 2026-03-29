@@ -1,0 +1,18 @@
+#!/bin/bash
+# hooks/repo-volumes — Output additional Docker volume lines for a repo
+# Called by: isopod create (during docker-compose.yml generation)
+# Env: REPO_NAME — the repo directory name
+#      POD_DIR   — absolute path to the pod directory
+
+set -euo pipefail
+
+repo_dir="$POD_DIR/$REPO_NAME"
+
+# Anonymous volumes for tmp/log — prevents bind mount from tracking temp data
+echo "      - /workspace/$REPO_NAME/tmp"
+echo "      - /workspace/$REPO_NAME/log"
+
+# For Node repos, anonymous volume preserves node_modules from image layer
+if [[ -f "$repo_dir/package.json" ]]; then
+  echo "      - /workspace/$REPO_NAME/node_modules"
+fi

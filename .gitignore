@@ -1,0 +1,10 @@
+pods/*
+!pods/.gitkeep
+pods_backup/
+/repos/
+/shared_storage/
+/docker.local/
+pod_template/*
+!pod_template/.gitkeep
+.generated.Dockerfile
+*.pem

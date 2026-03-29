@@ -1,0 +1,28 @@
+# docker-compose.template.yml — Per-pod container stack
+#
+# Placeholders are substituted at generation time by isopod create.
+#
+# Access via OrbStack DNS (no port mapping needed):
+#   https://<feature>.orb.local:8443  (code-server)
+#   http://<feature>.orb.local:3000   (Rails API)
+#   http://<feature>.orb.local:4000   (Vite frontend)
+
+services:
+  workspace:
+    image: __IMAGE_NAME__
+    container_name: __FEATURE_NAME__
+    hostname: __FEATURE_NAME__
+    init: true
+    environment:
+      - PGUSER=postgres
+      - TZ=UTC
+      - ISOPOD_REPOS=__REPO_LIST__
+    volumes:
+      - data:/pgdata
+      - __DOCKER_DIR__/code-server:/root/.local/share/code-server/User:delegated
+      - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
+      - __DOCKER_DIR__/certs:/certs:ro
+__REPO_VOLUMES__
+
+volumes:
+  data:

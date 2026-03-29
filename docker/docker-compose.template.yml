@@ -1,0 +1,33 @@
+# docker-compose.template.yml — Per-pod container stack
+#
+# Placeholders are substituted at generation time by isopod create.
+#
+# Access via OrbStack DNS (no port mapping needed):
+#   https://<feature>.orb.local:8443  (code-server)
+
+services:
+  workspace:
+    image: __IMAGE_NAME__
+    container_name: __FEATURE_NAME__
+    hostname: __FEATURE_NAME__
+    init: true
+    environment:
+      - TZ=UTC
+      - ISOPOD_REPOS=__REPO_LIST__
+      # Add your project-specific environment variables:
+      # - PGUSER=postgres
+      # - DATABASE_URL=postgres://localhost/myapp_dev
+      # - REDIS_URL=redis://localhost:6379/0
+    volumes:
+      # Named volume for persistent data (database, etc.)
+      - data:/data
+      # code-server settings and tasks
+      - __DOCKER_DIR__/code-server:/root/.local/share/code-server/User:delegated
+      - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
+      # mkcert certificates (generate with: mkcert "*.orb.local" localhost 127.0.0.1)
+      - __DOCKER_DIR__/certs:/certs:ro
+      # Repo bind mounts are injected here by isopod:
+__REPO_VOLUMES__
+
+volumes:
+  data:

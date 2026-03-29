@@ -1,0 +1,8 @@
+#!/bin/bash
+# hooks/db-stop — Stop PostgreSQL inside a running container
+# Called by: isopod db save, isopod db restore
+# Env: CONTAINER — the Docker container name
+
+set -euo pipefail
+
+docker exec "$CONTAINER" su postgres -c "/usr/lib/postgresql/17/bin/pg_ctl stop -D /pgdata -m fast" 2>&1 || true

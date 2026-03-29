@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Rails API: start",
+      "type": "shell",
+      "command": "rm -f /workspace/example-api/tmp/pids/server.pid; cd /workspace/example-api && bundle exec rails server -b 0.0.0.0 -p 3000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services"
+      }
+    },
+    {
+      "label": "Rails API: stop",
+      "type": "shell",
+      "command": "pkill -f '[p]uma.*3000' && echo 'Stopped' || echo 'Not running'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Rails API: restart",
+      "type": "shell",
+      "command": "pkill -f '[p]uma.*3000' 2>/dev/null; sleep 1; rm -f /workspace/example-api/tmp/pids/server.pid; cd /workspace/example-api && bundle exec rails server -b 0.0.0.0 -p 3000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services"
+      }
+    },
+    {
+      "label": "Frontend: start",
+      "type": "shell",
+      "command": "cd /workspace/example-frontend && VITE_API_URL=http://localhost:3000 npx vite --host 0.0.0.0 --port 4000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services"
+      }
+    },
+    {
+      "label": "Frontend: stop",
+      "type": "shell",
+      "command": "pkill -f '[v]ite.*4000' && echo 'Stopped' || echo 'Not running'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: restart",
+      "type": "shell",
+      "command": "pkill -f '[v]ite.*4000' 2>/dev/null; sleep 1; cd /workspace/example-frontend && VITE_API_URL=http://localhost:3000 npx vite --host 0.0.0.0 --port 4000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services"
+      }
+    }
+  ]
+}

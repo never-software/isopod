@@ -1,0 +1,17 @@
+#!/bin/bash
+# hooks/db-start — Start PostgreSQL inside a running container
+# Called by: isopod db save, isopod db restore
+# Env: CONTAINER — the Docker container name
+
+set -euo pipefail
+
+docker exec "$CONTAINER" su postgres -c "/usr/lib/postgresql/17/bin/pg_ctl start -D /pgdata -l /pgdata/logfile" 2>&1 || true
+
+for ((t=0; t<20; t+=2)); do
+  if docker exec "$CONTAINER" pg_isready -h localhost -U postgres &>/dev/null 2>&1; then
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "Warning: Postgres may not be fully ready" >&2

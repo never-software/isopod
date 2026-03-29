@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dev Server: start",
+      "type": "shell",
+      "command": "echo 'Configure your dev server command here'",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services"
+      }
+    },
+    {
+      "label": "Dev Server: stop",
+      "type": "shell",
+      "command": "echo 'Configure your stop command here'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Dev Server: restart",
+      "type": "shell",
+      "command": "echo 'Configure your restart command here'",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services"
+      }
+    }
+  ]
+}

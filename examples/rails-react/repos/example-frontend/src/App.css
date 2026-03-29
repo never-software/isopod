@@ -1,0 +1,121 @@
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.status .dot.connected { background: var(--success); }
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.form .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); }
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.btn-danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+.posts { display: flex; flex-direction: column; gap: 8px; }
+
+.post {
+  padding: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.post-content { flex: 1; }
+
+.post h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin-bottom: 4px;
+}
+
+.post p {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge.published {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.badge.draft {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--text);
+}
+
+.post-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text);
+}
+
+.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}

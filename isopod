@@ -1,0 +1,72 @@
+#!/bin/zsh
+# isopod — Manage parallel workspaces for multi-agent development
+#
+# Usage:
+#   isopod create <feature-name> [repos...] [--from <branch>]
+#                                               Create a new pod
+#   isopod up <feature-name>                    Start or refresh container
+#   isopod down <feature-name>                  Stop container (preserves data)
+#   isopod exec <feature-name> <command...>     Run command inside container
+#   isopod build                                 Rebuild image only (no DB reseed)
+#   isopod db save|restore|list|delete          Manage database snapshots
+#   isopod status [feature-name]                Show container health
+#   isopod list                                 List active pods
+#   isopod remove <feature-name>                Remove a pod
+#   isopod help                                 Show help
+
+set -euo pipefail
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+REPOS_DIR="$PROJECT_ROOT/repos"
+PODS_DIR="$PROJECT_ROOT/pods"
+DOCKER_DIR="$PROJECT_ROOT/docker"
+[[ -d "$PROJECT_ROOT/docker.local" ]] && DOCKER_DIR="$PROJECT_ROOT/docker.local"
+
+# ── Source libraries ───────────────────────────────────────────────────────────
+LIB_DIR="$PROJECT_ROOT/lib"
+
+source "$LIB_DIR/helpers/core.sh"
+source "$LIB_DIR/helpers/docker.sh"
+source "$LIB_DIR/helpers/workspace.sh"
+source "$LIB_DIR/helpers/git.sh"
+source "$LIB_DIR/helpers/layers.sh"
+
+# ── Source commands ────────────────────────────────────────────────────────────
+source "$LIB_DIR/build.sh"
+source "$LIB_DIR/create.sh"
+source "$LIB_DIR/up.sh"
+source "$LIB_DIR/down.sh"
+source "$LIB_DIR/exec.sh"
+source "$LIB_DIR/enter.sh"
+source "$LIB_DIR/fresh_db_seed.sh"
+source "$LIB_DIR/status.sh"
+source "$LIB_DIR/list.sh"
+source "$LIB_DIR/remove.sh"
+source "$LIB_DIR/db.sh"
+source "$LIB_DIR/cache.sh"
+source "$LIB_DIR/info.sh"
+source "$LIB_DIR/nuke.sh"
+source "$LIB_DIR/help.sh"
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+
+case "${1:-help}" in
+  create)  shift; cmd_create "$@" ;;
+  build)   cmd_build ;;
+  fresh-db-seed) cmd_fresh_db_seed ;;
+  up)      shift; cmd_up "$@" ;;
+  down)    shift; cmd_down "$@" ;;
+  exec)    shift; cmd_exec "$@" ;;
+  enter|sh) shift; cmd_enter "$@" ;;
+  db)      shift; cmd_db "$@" ;;
+  cache)   shift; cmd_cache "$@" ;;
+  status)  shift 2>/dev/null; cmd_status "$@" ;;
+  list|ls) cmd_list ;;
+  info)    cmd_info ;;
+  nuke)    cmd_nuke ;;
+  remove|rm) shift; cmd_remove "$@" ;;
+  help|--help|-h) cmd_help ;;
+  *) error "Unknown command: $1. Run 'isopod help' for usage." ;;
+esac
