@@ -29,30 +29,53 @@ display_urls() {
   local feature_name="$1"
 
   local urls_hook="$DOCKER_DIR/hooks/urls"
-  if [[ -x "$urls_hook" ]]; then
-    local output
-    output=$(FEATURE_NAME="$feature_name" "$urls_hook" 2>/dev/null)
-    if [[ -n "$output" ]]; then
-      echo ""
-      echo "${BOLD}Services:${NC}"
-      echo "$output" | while IFS=$'\t' read -r label url; do
-        # Wait for the service to respond before printing
-        printf "  ${DIM}%-14s${NC} waiting..." "$label"
-        local elapsed=0
-        local timeout=120
-        while (( elapsed < timeout )); do
-          if curl -sk --connect-timeout 2 --max-time 3 "$url" -o /dev/null 2>/dev/null; then
-            printf "\r\033[K  ${DIM}%-14s${NC} ${CYAN}%s${NC}\n" "$label" "$url"
-            break
-          fi
-          sleep 2
-          elapsed=$((elapsed + 2))
-        done
-        if (( elapsed >= timeout )); then
-          printf "\r\033[K  ${DIM}%-14s${NC} ${YELLOW}%s${NC} (not responding)\n" "$label" "$url"
-        fi
-      done
-      echo ""
+  [[ -x "$urls_hook" ]] || return 0
+
+  local output
+  output=$(FEATURE_NAME="$feature_name" "$urls_hook" 2>/dev/null) || return 0
+  [[ -n "$output" ]] || return 0
+
+  echo ""
+
+  # Wait for the first URL (IDE/code-server) while showing container progress.
+  # Run in a subshell with tracing off so variable assignments don't leak.
+  local first_url
+  first_url=$(echo "$output" | head -1 | cut -f2)
+
+  (
+    local elapsed=0
+    local timeout=600
+    local last_line=""
+    local log_line=""
+
+    while (( elapsed < timeout )); do
+      if curl -sk --connect-timeout 2 --max-time 3 "$first_url" -o /dev/null 2>/dev/null; then
+        break
+      fi
+
+      # Show the latest container log line as a status indicator
+      log_line=$(docker logs --tail 1 "$feature_name" 2>/dev/null) || log_line=""
+      if [[ -n "$log_line" ]] && [[ "$log_line" != "$last_line" ]]; then
+        printf '\033[2K\r  \033[2m▸ %s\033[0m' "${log_line:0:100}"
+        last_line="$log_line"
+      fi
+
+      sleep 3
+      elapsed=$((elapsed + 3))
+    done
+
+    # Clear the status line
+    printf '\033[2K\r'
+  ) 2>/dev/null
+
+  # Print final URL summary
+  echo "${BOLD}Services:${NC}"
+  echo "$output" | while IFS=$'\t' read -r label url; do
+    if curl -sk --connect-timeout 2 --max-time 3 "$url" -o /dev/null 2>/dev/null; then
+      printf "  ${DIM}%-14s${NC} ${CYAN}%s${NC}\n" "$label" "$url"
+    else
+      printf "  ${DIM}%-14s${NC} ${YELLOW}%s${NC} (not responding)\n" "$label" "$url"
     fi
-  fi
+  done
+  echo ""
 }
