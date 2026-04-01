@@ -17,6 +17,8 @@ cmd_up() {
 
   ensure_image
 
+  generate_compose "$feature_name"
+
   info "Starting container..."
   compose_up "$project" "$compose_file"
 

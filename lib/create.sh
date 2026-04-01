@@ -88,53 +88,7 @@ cmd_create_container() {
     create_repo_clone "$REPOS_DIR/$repo_name" "$pod_dir/$repo_name" "$feature_name" "$from_branch"
   done
 
-  # ── Step 2: Generate docker-compose file ──
-  info "Generating docker-compose.yml..."
-  
-  # Build the dynamic volume definitions for the repos that actually exist
-  local repo_volumes=""
-  local repo_volumes_hook="$DOCKER_DIR/hooks/repo-volumes"
-  for dir_name in "${repos[@]}"; do
-    if [[ -d "$pod_dir/$dir_name" ]]; then
-      repo_volumes="$repo_volumes      - ./$dir_name:/workspace/$dir_name:delegated"$'\n'
-      # Delegate extra volumes (anonymous overlays, etc.) to project hook
-      if [[ -x "$repo_volumes_hook" ]]; then
-        local extra
-        extra=$(REPO_NAME="$dir_name" POD_DIR="$pod_dir" "$repo_volumes_hook")
-        if [[ -n "$extra" ]]; then
-          repo_volumes="$repo_volumes$extra"$'\n'
-        fi
-      fi
-    fi
-  done
-
-  # Strip the trailing newline from repo_volumes
-  repo_volumes="${repo_volumes%$'\n'}"
-
-  local compose_file="$pod_dir/docker-compose.yml"
-  
-  # Build comma-separated list of active repos for the container
-  local repo_list="${(j:,:)repos}"
-
-  # Inject the dynamic volumes using awk
-  export VOLUMES="$repo_volumes"
-  awk -v name="$feature_name" \
-      -v docker_dir="$DOCKER_DIR" \
-      -v image_name="$WORKSPACE_IMAGE" \
-      -v repo_list="$repo_list" \
-      '{
-        if ($0 ~ "__REPO_VOLUMES__") {
-          print ENVIRON["VOLUMES"]
-        } else {
-          gsub("__FEATURE_NAME__", name)
-          gsub("__DOCKER_DIR__", docker_dir)
-          gsub("__IMAGE_NAME__", image_name)
-          gsub("__REPO_LIST__", repo_list)
-          print $0
-        }
-      }' "$DOCKER_DIR/docker-compose.template.yml" > "$compose_file"
-
-  # Copy .env files from main repos into pod (they're gitignored so won't exist)
+  # ── Step 2: Copy .env files from main repos into pod (they're gitignored so won't exist) ──
   for dir_name in "${repos[@]}"; do
     if [[ -d "$REPOS_DIR/$dir_name" ]] && [[ -d "$pod_dir/$dir_name" ]]; then
       (cd "$REPOS_DIR/$dir_name" && find . -name ".env" -not -path "*/node_modules/*" -not -path "*/.git/*") | while read -r env_file; do
@@ -161,7 +115,7 @@ cmd_create_container() {
       "$pre_create_hook"
   fi
 
-  # ── Step 4: Start container (delegates to cmd_up) ──
+  # ── Step 4: Start container (delegates to cmd_up, which generates compose) ──
   cmd_up "$feature_name"
 
   # ── Step 5: Run one-time post-create hook ──

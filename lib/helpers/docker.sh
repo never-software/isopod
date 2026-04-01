@@ -54,6 +54,54 @@ workspace_container() {
   echo "${1}"
 }
 
+# Generate (or regenerate) docker-compose.yml for a pod from the current template.
+# Detects repos from the pod directory automatically.
+generate_compose() {
+  local feature_name="$1"
+  local pod_dir="$PODS_DIR/$feature_name"
+
+  # Detect repos from pod directory (directories with .git)
+  local repos=()
+  for dir in "$pod_dir"/*/; do
+    [[ -d "$dir/.git" ]] && repos+=("$(basename "$dir")")
+  done
+
+  local repo_volumes=""
+  local repo_volumes_hook="$DOCKER_DIR/hooks/repo-volumes"
+  for dir_name in "${repos[@]}"; do
+    if [[ -d "$pod_dir/$dir_name" ]]; then
+      repo_volumes="$repo_volumes      - ./$dir_name:/workspace/$dir_name:delegated"$'\n'
+      if [[ -x "$repo_volumes_hook" ]]; then
+        local extra="$(REPO_NAME="$dir_name" POD_DIR="$pod_dir" "$repo_volumes_hook")"
+        if [[ -n "$extra" ]]; then
+          repo_volumes="$repo_volumes$extra"$'\n'
+        fi
+      fi
+    fi
+  done
+  repo_volumes="${repo_volumes%$'\n'}"
+
+  local compose_file="$pod_dir/docker-compose.yml"
+  local repo_list="${(j:,:)repos}"
+
+  export VOLUMES="$repo_volumes"
+  awk -v name="$feature_name" \
+      -v docker_dir="$DOCKER_DIR" \
+      -v image_name="$WORKSPACE_IMAGE" \
+      -v repo_list="$repo_list" \
+      '{
+        if ($0 ~ "__REPO_VOLUMES__") {
+          print ENVIRON["VOLUMES"]
+        } else {
+          gsub("__FEATURE_NAME__", name)
+          gsub("__DOCKER_DIR__", docker_dir)
+          gsub("__IMAGE_NAME__", image_name)
+          gsub("__REPO_LIST__", repo_list)
+          print $0
+        }
+      }' "$DOCKER_DIR/docker-compose.template.yml" > "$compose_file"
+}
+
 # Resilient docker compose up with automatic retry on port conflicts.
 # Docker can leave phantom port bindings after a failed container start.
 # This helper catches that error, does a full "down --remove-orphans" to release
