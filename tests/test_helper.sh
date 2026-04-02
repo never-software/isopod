@@ -182,6 +182,8 @@ services:
     volumes:
       - pgdata:/pgdata
 __REPO_VOLUMES__
+__WORKSPACE_TEMPLATE_VOLUMES__
+__HOME_TEMPLATE_VOLUMES__
 volumes:
   pgdata:
 EOF

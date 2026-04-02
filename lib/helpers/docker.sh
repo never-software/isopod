@@ -84,21 +84,35 @@ generate_compose() {
   local compose_file="$pod_dir/docker-compose.yml"
   local repo_list="${(j:,:)repos}"
 
-  # Generate home template volume mounts from pod's own .home/ copy
+  # Generate home template volume mounts (live bind mounts from source)
   local home_volumes=""
-  local pod_home_dir="$pod_dir/.home"
-  if [[ -d "$pod_home_dir" ]]; then
-    for item in "$pod_home_dir"/*(DN); do
+  local home_template_dir="$PROJECT_ROOT/pod_home_template"
+  if [[ -d "$home_template_dir" ]]; then
+    for item in "$home_template_dir"/*(DN); do
       [[ -e "$item" ]] || continue
       local name=$(basename "$item")
-      home_volumes="${home_volumes}      - ./.home/${name}:/root/${name}:delegated"$'\n'
-      home_volumes="${home_volumes}      - ./.home/${name}:/home/dev/${name}:delegated"$'\n'
+      home_volumes="${home_volumes}      - ${item}:/root/${name}:delegated"$'\n'
+      home_volumes="${home_volumes}      - ${item}:/home/dev/${name}:delegated"$'\n'
     done
     home_volumes="${home_volumes%$'\n'}"
   fi
 
+  # Generate workspace template volume mounts (live bind mounts from source)
+  local workspace_template_volumes=""
+  local workspace_template_dir="$PROJECT_ROOT/pod_workspace_template"
+  if [[ -d "$workspace_template_dir" ]]; then
+    for item in "$workspace_template_dir"/*(DN); do
+      [[ -e "$item" ]] || continue
+      local name=$(basename "$item")
+      [[ "$name" == ".gitkeep" ]] && continue
+      workspace_template_volumes="${workspace_template_volumes}      - ${item}:/workspace/${name}:delegated"$'\n'
+    done
+    workspace_template_volumes="${workspace_template_volumes%$'\n'}"
+  fi
+
   export VOLUMES="$repo_volumes"
-  export HOME_VOLUMES="$home_volumes"
+  export HOME_TEMPLATE_VOLUMES="$home_volumes"
+  export WORKSPACE_TEMPLATE_VOLUMES="$workspace_template_volumes"
   awk -v name="$feature_name" \
       -v docker_dir="$DOCKER_DIR" \
       -v image_name="$WORKSPACE_IMAGE" \
@@ -106,8 +120,10 @@ generate_compose() {
       '{
         if ($0 ~ "__REPO_VOLUMES__") {
           print ENVIRON["VOLUMES"]
-        } else if ($0 ~ "__HOME_VOLUMES__") {
-          if (ENVIRON["HOME_VOLUMES"] != "") print ENVIRON["HOME_VOLUMES"]
+        } else if ($0 ~ "__HOME_TEMPLATE_VOLUMES__") {
+          if (ENVIRON["HOME_TEMPLATE_VOLUMES"] != "") print ENVIRON["HOME_TEMPLATE_VOLUMES"]
+        } else if ($0 ~ "__WORKSPACE_TEMPLATE_VOLUMES__") {
+          if (ENVIRON["WORKSPACE_TEMPLATE_VOLUMES"] != "") print ENVIRON["WORKSPACE_TEMPLATE_VOLUMES"]
         } else {
           gsub("__FEATURE_NAME__", name)
           gsub("__DOCKER_DIR__", docker_dir)

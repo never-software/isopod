@@ -71,21 +71,6 @@ cmd_create_container() {
 
   mkdir -p "$pod_dir"
 
-  # ── Step 0: Copy pod template if it exists ──
-  local pod_template_dir="$PROJECT_ROOT/pod_template"
-  if [[ -d "$pod_template_dir" ]]; then
-    info "Copying pod template..."
-    rsync -a "$pod_template_dir/" "$pod_dir/"
-  fi
-
-  # ── Step 0b: Copy home template if it exists ──
-  local home_template_dir="$PROJECT_ROOT/pod_home_template"
-  if [[ -d "$home_template_dir" ]]; then
-    info "Copying home template..."
-    mkdir -p "$pod_dir/.home"
-    rsync -a "$home_template_dir/" "$pod_dir/.home/"
-  fi
-
   # ── Step 1: Create local clones on the host ──
   if [[ -n "$from_branch" ]]; then
     info "Branching from: $from_branch"

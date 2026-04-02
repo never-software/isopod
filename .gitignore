@@ -4,8 +4,8 @@ pods_backup/
 /repos/
 /shared_storage/
 /docker.local/
-pod_template/*
-!pod_template/.gitkeep
+pod_workspace_template/*
+!pod_workspace_template/.gitkeep
 /pod_home_template/
 .generated.Dockerfile
 *.pem

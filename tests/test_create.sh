@@ -303,17 +303,16 @@ EOF
   _pass
 }
 
-test_create_copies_pod_template() {
+test_create_mounts_pod_workspace_template() {
   require_docker_for_test
   setup_test_env
   create_test_repo "api"
   source_isopod_libs
   create_compose_template
 
-  # Create pod_template in a test project root
-  local pod_template="$TEST_TMPDIR/pod_template"
-  mkdir -p "$pod_template"
-  echo "template config" > "$pod_template/.agent-config"
+  # Create pod_workspace_template in a test project root
+  local pod_template="$TEST_TMPDIR/pod_workspace_template"
+  mkdir -p "$pod_template/.agent-config"
 
   # Override PROJECT_ROOT to use our test template
   export PROJECT_ROOT="$TEST_TMPDIR"
@@ -321,7 +320,8 @@ test_create_copies_pod_template() {
 
   capture_fn cmd_create "test-feat" "api"
   assert_exit_code 0
-  assert_file_exists "$TEST_PODS_DIR/test-feat/.agent-config"
+  local compose_content=$(cat "$TEST_PODS_DIR/test-feat/docker-compose.yml")
+  assert_contains "$compose_content" "$pod_template/.agent-config:/workspace/.agent-config:delegated"
   _pass
 }
 

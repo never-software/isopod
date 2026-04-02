@@ -28,6 +28,10 @@ services:
       - __DOCKER_DIR__/certs:/certs:ro
       # Repo bind mounts are injected here by isopod:
 __REPO_VOLUMES__
+      # Workspace template (pod_workspace_template/) — live bind mounts:
+__WORKSPACE_TEMPLATE_VOLUMES__
+      # Home template (pod_home_template/) — live bind mounts:
+__HOME_TEMPLATE_VOLUMES__
 
 volumes:
   data:
