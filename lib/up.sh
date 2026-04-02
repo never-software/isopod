@@ -17,6 +17,13 @@ cmd_up() {
 
   ensure_image
 
+  # Sync home template into pod (creates on first up, updates on subsequent)
+  local home_template_dir="$PROJECT_ROOT/pod_home_template"
+  if [[ -d "$home_template_dir" ]]; then
+    mkdir -p "$pod_dir/.home"
+    rsync -a "$home_template_dir/" "$pod_dir/.home/"
+  fi
+
   generate_compose "$feature_name"
 
   info "Starting container..."

@@ -6,5 +6,6 @@ pods_backup/
 /docker.local/
 pod_template/*
 !pod_template/.gitkeep
+/pod_home_template/
 .generated.Dockerfile
 *.pem
