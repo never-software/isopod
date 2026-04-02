@@ -9,3 +9,10 @@ pod_workspace_template/*
 /pod_home_template/
 .generated.Dockerfile
 *.pem
+
+# Indexer
+indexer/dist/
+indexer/node_modules/
+indexer/.env
+indexer/.indexer.pid
+indexer/.indexer.log
