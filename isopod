@@ -50,6 +50,8 @@ source "$LIB_DIR/info.sh"
 source "$LIB_DIR/nuke.sh"
 source "$LIB_DIR/setup.sh"
 source "$LIB_DIR/help.sh"
+source "$LIB_DIR/index.sh"
+source "$LIB_DIR/search.sh"
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
@@ -69,6 +71,8 @@ case "${1:-help}" in
   nuke)    cmd_nuke ;;
   remove|rm) shift; cmd_remove "$@" ;;
   setup) cmd_setup ;;
+  index) shift; cmd_index "$@" ;;
+  search) shift; cmd_search "$@" ;;
   help|--help|-h) cmd_help ;;
   *) error "Unknown command: $1. Run 'isopod help' for usage." ;;
 esac

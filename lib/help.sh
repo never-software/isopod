@@ -21,6 +21,8 @@ cmd_help() {
   echo "  ${BOLD}nuke${NC}                                        Remove all containers, volumes, and cache"
   echo "  ${BOLD}remove${NC}        <feature-name>                Remove a pod"
   echo "  ${BOLD}setup${NC}                                       Interactive first-time setup wizard"
+  echo "  ${BOLD}index${NC}         [status|base|pod <name>]      Manage code indexing"
+  echo "  ${BOLD}search${NC}        <query> [--pod <name>]        Search indexed code"
   echo "  ${BOLD}help${NC}                                        Show this help"
   echo ""
 
