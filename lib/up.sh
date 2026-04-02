@@ -17,6 +17,31 @@ cmd_up() {
 
   ensure_image
 
+  # Offer to clone base database if pod's data volume is empty
+  local base_vol="isopod-base-data"
+  local pod_vol="${project}_data"
+  if docker volume inspect "$base_vol" &>/dev/null 2>&1; then
+    local vol_empty=true
+    if docker volume inspect "$pod_vol" &>/dev/null 2>&1; then
+      if docker run --rm -v "$pod_vol":/pgdata alpine test -f /pgdata/PG_VERSION 2>/dev/null; then
+        vol_empty=false
+      fi
+    fi
+    if [[ "$vol_empty" == "true" ]]; then
+      echo ""
+      printf "${YELLOW}⚠${NC} This pod has no database. A fresh seed is available.\n"
+      printf "  Clone base database into this pod? ${BOLD}[Y/n]${NC} "
+      read -r answer
+      if [[ "$answer" != "n" && "$answer" != "N" ]]; then
+        info "Cloning base database..."
+        docker volume rm "$pod_vol" 2>/dev/null || true
+        docker volume create "$pod_vol" >/dev/null
+        docker run --rm -v "$base_vol":/from -v "$pod_vol":/to "$WORKSPACE_IMAGE" bash -c "cp -a /from/. /to/"
+        success "Database cloned from base"
+      fi
+    fi
+  fi
+
   # Sync home template into pod (creates on first up, updates on subsequent)
   local home_template_dir="$PROJECT_ROOT/pod_home_template"
   if [[ -d "$home_template_dir" ]]; then
