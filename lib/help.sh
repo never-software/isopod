@@ -20,6 +20,7 @@ cmd_help() {
   echo "  ${BOLD}info${NC}                                        Show pods, volumes, and cache"
   echo "  ${BOLD}nuke${NC}                                        Remove all containers, volumes, and cache"
   echo "  ${BOLD}remove${NC}        <feature-name>                Remove a pod"
+  echo "  ${BOLD}setup${NC}                                       Interactive first-time setup wizard"
   echo "  ${BOLD}help${NC}                                        Show this help"
   echo ""
 
