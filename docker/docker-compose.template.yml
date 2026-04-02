@@ -13,6 +13,8 @@ services:
     init: true
     environment:
       - TZ=UTC
+      - TERM=xterm-256color
+      - COLORTERM=truecolor
       - ISOPOD_REPOS=__REPO_LIST__
       # Add your project-specific environment variables:
       # - PGUSER=postgres
