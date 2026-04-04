@@ -15,28 +15,62 @@ import type { ContainerStatus, OperationEvent } from "../types.js";
 
 /**
  * Check if Docker is available and the daemon is running.
- * Throws if Docker is not usable.
+ * If not running, attempts to auto-start OrbStack or Docker Desktop and waits up to 60s.
  */
 export function requireDocker(): void {
   try {
     execSync("docker info", { stdio: "ignore", timeout: 10000 });
+    return;
   } catch {
+    // Docker not running — try to auto-start
+  }
+
+  // Prefer OrbStack if installed, fall back to Docker Desktop
+  if (existsSync("/Applications/OrbStack.app")) {
+    process.stderr.write("  Starting OrbStack...\n");
+    try {
+      execSync("open -a OrbStack", { stdio: "ignore" });
+    } catch { /* ignore */ }
+  } else if (existsSync("/Applications/Docker.app")) {
+    process.stderr.write("  Starting Docker Desktop...\n");
+    try {
+      execSync("open -a Docker", { stdio: "ignore" });
+    } catch { /* ignore */ }
+  } else {
     throw new Error(
-      "Docker is not running. Start Docker Desktop or OrbStack first.",
+      "Docker is not running and neither OrbStack nor Docker Desktop was found.",
     );
   }
+
+  // Wait for Docker daemon to respond
+  const timeout = 60;
+  const interval = 2;
+  for (let t = 0; t < timeout; t += interval) {
+    try {
+      execSync("docker info", { stdio: "ignore", timeout: 10000 });
+      process.stderr.write("  Docker daemon running\n");
+      return;
+    } catch {
+      execSync(`sleep ${interval}`);
+    }
+  }
+
+  throw new Error(
+    `Docker daemon failed to start after ${timeout}s. Please start Docker manually.`,
+  );
 }
 
 /**
- * Get container statuses for all isopod containers in a single Docker call.
- * Returns a map of pod name → ContainerStatus.
+ * Get container statuses for all containers in a single Docker call.
+ * Returns a map of container name → ContainerStatus.
+ * Container names equal pod names (compose template sets container_name: __FEATURE_NAME__).
  */
 export function getContainerStatuses(): Map<string, ContainerStatus> {
   const statuses = new Map<string, ContainerStatus>();
 
   try {
     const output = execSync(
-      'docker ps -a --format "{{.Names}}\t{{.State}}\t{{.Status}}" --filter name=isopod-',
+      'docker ps -a --format "{{.Names}}\t{{.State}}\t{{.Status}}"',
       { encoding: "utf-8", timeout: 10000 },
     ).trim();
 
@@ -45,11 +79,7 @@ export function getContainerStatuses(): Map<string, ContainerStatus> {
     for (const line of output.split("\n")) {
       const [name, state, status] = line.split("\t");
       if (!name) continue;
-
-      const match = name.match(/^isopod-(.+?)[-_]/);
-      if (match) {
-        statuses.set(match[1], { state: state || "", status: status || "" });
-      }
+      statuses.set(name, { state: state || "", status: status || "" });
     }
   } catch {
     // Docker not running or no containers
@@ -195,10 +225,14 @@ export function generateCompose(featureName: string): void {
   writeFileSync(join(podDir, "docker-compose.yml"), outputLines.join("\n"));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 /**
  * Resilient docker compose up with automatic retry on port conflicts.
  */
-export function composeUp(project: string, composeFile: string): void {
+export async function composeUp(project: string, composeFile: string): Promise<void> {
   const maxRetries = 3;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -224,7 +258,7 @@ export function composeUp(project: string, composeFile: string): void {
         } catch {
           // ignore
         }
-        execSync("sleep 3");
+        await sleep(3000);
         continue;
       }
       throw err;
@@ -235,7 +269,7 @@ export function composeUp(project: string, composeFile: string): void {
 /**
  * Wait for a container to become reachable.
  */
-export function waitForContainer(container: string, timeout = 30): boolean {
+export async function waitForContainer(container: string, timeout = 30): Promise<boolean> {
   for (let t = 0; t < timeout; t += 2) {
     try {
       execSync(`docker exec "${container}" true`, {
@@ -244,7 +278,7 @@ export function waitForContainer(container: string, timeout = 30): boolean {
       });
       return true;
     } catch {
-      execSync("sleep 2");
+      await sleep(2000);
     }
   }
   return false;

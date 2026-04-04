@@ -52,9 +52,10 @@ podRoutes.post("/", async (c) => {
 });
 
 // POST /api/pods/:name/up — start/refresh a pod (SSE stream)
-podRoutes.post("/:name/up", (c) => {
+podRoutes.post("/:name/up", async (c) => {
   const name = c.req.param("name");
-  return streamOperationEvents(c, upPod(name));
+  const body = await c.req.json<{ cloneDb?: boolean }>().catch((): { cloneDb?: boolean } => ({}));
+  return streamOperationEvents(c, upPod(name, { cloneDb: body.cloneDb }));
 });
 
 // POST /api/pods/:name/down — stop a pod

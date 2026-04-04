@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { apiGet, apiPost, apiDelete, apiStream } from "../client.js";
+import { apiGet, apiDelete, apiStream } from "../client.js";
 import { ensureServer } from "../daemon.js";
 import {
   success,
@@ -120,10 +120,9 @@ cacheCommand
     }
 
     try {
-      // Use apiStream since cacheDestroy is a streaming endpoint (DELETE → SSE)
-      // But our client.ts apiStream does POST. Let's use apiDelete for this.
-      await apiDelete("/api/cache");
-      success("Cache destroyed.");
+      for await (const event of apiStream("/api/cache/destroy")) {
+        printEvent(event);
+      }
     } catch (err: any) {
       errorOut(err.message);
       process.exit(1);

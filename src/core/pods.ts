@@ -11,7 +11,7 @@ import {
   ensureImage,
   dockerCleanup,
 } from "./docker.js";
-import { teardownWorkspace, setupWorkspace } from "./workspace.js";
+import { teardownWorkspace, setupWorkspace, displayUrls } from "./workspace.js";
 import { runHook } from "./hooks.js";
 import { createRepoClone } from "./git.js";
 import type { PodInfo, PodRepo, OperationEvent } from "../types.js";
@@ -299,8 +299,8 @@ export async function* upPod(
   // Ensure image
   yield* ensureImage();
 
-  // Offer to clone base database if applicable
-  if (opts.cloneDb !== false) {
+  // Clone base database if explicitly requested
+  if (opts.cloneDb === true) {
     const baseVol = "isopod-base-data";
     const podVol = `${project}_data`;
 
@@ -353,10 +353,10 @@ export async function* upPod(
 
   // Start container
   yield { type: "info", message: "Starting container..." };
-  composeUp(project, composeFile);
+  await composeUp(project, composeFile);
 
   // Wait for container
-  if (!waitForContainer(name)) {
+  if (!(await waitForContainer(name))) {
     yield { type: "warn", message: `Container '${name}' not reachable after 30s — continuing anyway` };
   }
 
@@ -371,6 +371,9 @@ export async function* upPod(
 
   // Setup workspace
   setupWorkspace(podDir, name);
+
+  // Display service URLs
+  yield* displayUrls(name);
 
   yield { type: "success", message: "Up complete" };
 }

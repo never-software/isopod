@@ -1,7 +1,16 @@
 import { execSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, accessSync, constants } from "fs";
 import { resolve } from "path";
 import { config } from "../config.js";
+
+function isExecutable(filePath: string): boolean {
+  try {
+    accessSync(filePath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Run a hook script if it exists and is executable.
@@ -12,7 +21,7 @@ export function runHook(
   env: Record<string, string> = {},
 ): boolean {
   const hookPath = resolve(config.dockerDir, "hooks", hookName);
-  if (!existsSync(hookPath)) return false;
+  if (!existsSync(hookPath) || !isExecutable(hookPath)) return false;
 
   execSync(hookPath, {
     env: { ...process.env, ...env },
@@ -32,7 +41,7 @@ export function runHookCapture(
   env: Record<string, string> = {},
 ): string | null {
   const hookPath = resolve(config.dockerDir, "hooks", hookName);
-  if (!existsSync(hookPath)) return null;
+  if (!existsSync(hookPath) || !isExecutable(hookPath)) return null;
 
   return execSync(hookPath, {
     env: { ...process.env, ...env },

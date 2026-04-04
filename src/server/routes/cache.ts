@@ -57,8 +57,8 @@ cacheRoutes.delete("/:layer", (c) => {
   }
 });
 
-// DELETE /api/cache — destroy all cache
-cacheRoutes.delete("/", (c) => {
+// POST /api/cache/destroy — destroy all cache (SSE stream)
+cacheRoutes.post("/destroy", (c) => {
   return streamOperationEvents(c, cacheDestroy());
 });
 

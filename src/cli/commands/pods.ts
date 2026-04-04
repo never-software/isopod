@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { createInterface } from "readline";
 import { apiGet, apiPost, apiDelete, apiStream } from "../client.js";
 import { ensureServer } from "../daemon.js";
 import {
@@ -12,6 +13,16 @@ import {
   printEvent,
 } from "../output.js";
 import type { PodInfo, Repo, CacheInfo, LayerInfo } from "../../types.js";
+
+function promptYesNo(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase() !== "n");
+    });
+  });
+}
 
 export const listCommand = new Command("list")
   .alias("ls")
@@ -201,15 +212,32 @@ export const createCommand = new Command("create")
 export const upCommand = new Command("up")
   .description("Start or refresh a pod container")
   .argument("<name>", "Pod name")
-  .action(async (name: string) => {
+  .option("--clone-db", "Clone base database into pod")
+  .option("--no-clone-db", "Skip database cloning")
+  .action(async (name: string, opts: { cloneDb?: boolean }) => {
     if (!(await ensureServer())) {
       errorOut("Could not connect to server");
       process.exit(1);
     }
 
+    let cloneDb = opts.cloneDb;
+    // If not explicitly set, prompt the user (matching shell behavior)
+    if (cloneDb === undefined) {
+      // Check if base volume exists — if so, ask
+      try {
+        const pod = await apiGet<PodInfo>(`/api/pods/${encodeURIComponent(name)}`);
+        if (pod) {
+          cloneDb = await promptYesNo("  Clone base database into this pod? [Y/n] ");
+        }
+      } catch {
+        // Pod info not available, skip prompting
+      }
+    }
+
     try {
       for await (const event of apiStream(
         `/api/pods/${encodeURIComponent(name)}/up`,
+        { cloneDb },
       )) {
         printEvent(event);
       }

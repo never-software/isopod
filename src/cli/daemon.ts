@@ -6,6 +6,7 @@ import {
   writeFileSync,
   unlinkSync,
   openSync,
+  closeSync,
 } from "fs";
 import { resolve, dirname } from "path";
 import { config } from "../config.js";
@@ -64,6 +65,9 @@ async function spawnServer(): Promise<void> {
       ISOPOD_PORT: String(config.port),
     },
   });
+
+  // Close the log fd in the parent — the child inherited its own copy
+  closeSync(logFd);
 
   // Write PID file
   if (child.pid) {
