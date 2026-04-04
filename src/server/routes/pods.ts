@@ -7,7 +7,10 @@ import {
   downPod,
   removePod,
   execInPod,
+  createPod,
+  upPod,
 } from "../../core/pods.js";
+import { streamOperationEvents } from "../sse.js";
 
 export const podRoutes = new Hono();
 
@@ -30,6 +33,28 @@ podRoutes.get("/:name", (c) => {
 podRoutes.get("/:name/exists", (c) => {
   const name = c.req.param("name");
   return c.json({ exists: podExists(name) });
+});
+
+// POST /api/pods — create a new pod (SSE stream)
+podRoutes.post("/", async (c) => {
+  const body = await c.req.json<{
+    name: string;
+    repos?: string[];
+    from?: string;
+    cloneDb?: boolean;
+  }>();
+
+  if (!body.name?.trim()) {
+    return c.json({ error: "Pod name is required" }, 400);
+  }
+
+  return streamOperationEvents(c, createPod(body));
+});
+
+// POST /api/pods/:name/up — start/refresh a pod (SSE stream)
+podRoutes.post("/:name/up", (c) => {
+  const name = c.req.param("name");
+  return streamOperationEvents(c, upPod(name));
 });
 
 // POST /api/pods/:name/down — stop a pod

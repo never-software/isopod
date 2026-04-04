@@ -37,6 +37,31 @@ export function header(message: string): void {
   console.log(`\n${colors.bold(colors.cyan(message))}\n`);
 }
 
+/**
+ * Print an OperationEvent to the terminal with appropriate formatting.
+ */
+export function printEvent(event: { type: string; message: string }): void {
+  switch (event.type) {
+    case "info":
+      info(event.message);
+      break;
+    case "success":
+      success(event.message);
+      break;
+    case "warn":
+      warn(event.message);
+      break;
+    case "error":
+      error(event.message);
+      break;
+    case "done":
+      success(event.message);
+      break;
+    default:
+      console.log(event.message);
+  }
+}
+
 export function formatTable(
   headers: string[],
   rows: string[][],

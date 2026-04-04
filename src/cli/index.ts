@@ -3,6 +3,8 @@
 import { Command } from "commander";
 import { serverCommand } from "./commands/server.js";
 import {
+  createCommand,
+  upCommand,
   listCommand,
   statusCommand,
   infoCommand,
@@ -38,6 +40,8 @@ program
   });
 
 // Pod commands
+program.addCommand(createCommand);
+program.addCommand(upCommand);
 program.addCommand(listCommand);
 program.addCommand(statusCommand);
 program.addCommand(infoCommand);

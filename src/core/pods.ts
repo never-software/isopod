@@ -1,10 +1,20 @@
-import { existsSync, readdirSync, statSync, rmSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync, statSync, rmSync, mkdirSync, copyFileSync } from "fs";
+import { join, relative } from "path";
 import { execSync } from "child_process";
 import { config } from "../config.js";
-import { getContainerStatuses } from "./docker.js";
-import { teardownWorkspace } from "./workspace.js";
-import type { PodInfo, PodRepo } from "../types.js";
+import {
+  getContainerStatuses,
+  requireDocker,
+  generateCompose,
+  composeUp,
+  waitForContainer,
+  ensureImage,
+  dockerCleanup,
+} from "./docker.js";
+import { teardownWorkspace, setupWorkspace } from "./workspace.js";
+import { runHook } from "./hooks.js";
+import { createRepoClone } from "./git.js";
+import type { PodInfo, PodRepo, OperationEvent } from "../types.js";
 
 /**
  * List all pods with their repos and container status.
@@ -187,7 +197,207 @@ export function execInPod(
   }
 }
 
+// ── Complex Lifecycle (async generators) ────────────────────────────
+
+/**
+ * Create a new pod. Yields progress events.
+ */
+export async function* createPod(opts: {
+  name: string;
+  repos?: string[];
+  from?: string;
+  cloneDb?: boolean;
+}): AsyncGenerator<OperationEvent> {
+  const { name, from } = opts;
+  const podDir = join(config.podsDir, name);
+
+  if (existsSync(podDir)) {
+    throw new Error(`Pod '${name}' already exists`);
+  }
+
+  requireDocker();
+
+  // Resolve repos
+  let repos = opts.repos ?? listRepoNames();
+  const validated = repos.filter((r) =>
+    existsSync(join(config.reposDir, r)),
+  );
+  if (validated.length < repos.length) {
+    const invalid = repos.filter((r) => !validated.includes(r));
+    yield { type: "warn", message: `Unknown repos: ${invalid.join(", ")}` };
+  }
+  repos = validated;
+
+  yield { type: "info", message: `Creating pod: ${name}` };
+  mkdirSync(podDir, { recursive: true });
+
+  // Clone repos
+  if (from) {
+    yield { type: "info", message: `Branching from: ${from}` };
+  }
+
+  for (const repoName of repos) {
+    yield { type: "info", message: `Creating ${repoName} workspace on branch ${name}...` };
+    yield* createRepoClone(
+      join(config.reposDir, repoName),
+      join(podDir, repoName),
+      name,
+      from,
+    );
+  }
+
+  // Copy .env files from main repos
+  for (const repoName of repos) {
+    const srcRepo = join(config.reposDir, repoName);
+    const dstRepo = join(podDir, repoName);
+    if (existsSync(srcRepo) && existsSync(dstRepo)) {
+      copyEnvFiles(srcRepo, dstRepo);
+    }
+  }
+
+  // Run pre-create hook
+  const project = `isopod-${name}`;
+  runHook("pre-create", {
+    COMPOSE_PROJECT: project,
+    WORKSPACE_IMAGE: config.workspaceImage,
+    POD_DIR: podDir,
+    FEATURE_NAME: name,
+  });
+
+  // Start container (delegates to upPod)
+  yield* upPod(name, { cloneDb: opts.cloneDb ?? true });
+
+  // Run post-create hook
+  runHook("post-create", {
+    CONTAINER: name,
+    POD_DIR: podDir,
+    FEATURE_NAME: name,
+  });
+
+  yield { type: "done", message: "Pod created", data: { name } };
+}
+
+/**
+ * Start or refresh a pod container. Yields progress events.
+ */
+export async function* upPod(
+  name: string,
+  opts: { cloneDb?: boolean } = {},
+): AsyncGenerator<OperationEvent> {
+  const podDir = join(config.podsDir, name);
+  if (!existsSync(podDir)) {
+    throw new Error(`Pod '${name}' not found`);
+  }
+
+  requireDocker();
+
+  const project = `isopod-${name}`;
+  const composeFile = join(podDir, "docker-compose.yml");
+
+  yield { type: "info", message: `Bringing up workspace for: ${name}` };
+
+  // Ensure image
+  yield* ensureImage();
+
+  // Offer to clone base database if applicable
+  if (opts.cloneDb !== false) {
+    const baseVol = "isopod-base-data";
+    const podVol = `${project}_data`;
+
+    try {
+      execSync(`docker volume inspect "${baseVol}"`, {
+        stdio: "ignore",
+        timeout: 10000,
+      });
+
+      let volEmpty = true;
+      try {
+        execSync(`docker volume inspect "${podVol}"`, {
+          stdio: "ignore",
+          timeout: 10000,
+        });
+        try {
+          execSync(
+            `docker run --rm -v "${podVol}":/pgdata alpine test -f /pgdata/PG_VERSION`,
+            { stdio: "ignore", timeout: 10000 },
+          );
+          volEmpty = false;
+        } catch {
+          // Volume exists but no PG_VERSION
+        }
+      } catch {
+        // Volume doesn't exist
+      }
+
+      if (volEmpty) {
+        yield { type: "info", message: "Cloning base database..." };
+        try {
+          execSync(`docker volume rm "${podVol}"`, { stdio: "ignore" });
+        } catch {
+          // ignore
+        }
+        execSync(`docker volume create "${podVol}"`, { stdio: "ignore" });
+        execSync(
+          `docker run --rm -v "${baseVol}":/from -v "${podVol}":/to "${config.workspaceImage}" bash -c "cp -a /from/. /to/"`,
+          { stdio: "pipe", timeout: 300000 },
+        );
+        yield { type: "success", message: "Database cloned from base" };
+      }
+    } catch {
+      // No base volume — skip
+    }
+  }
+
+  // Generate compose file
+  generateCompose(name);
+
+  // Start container
+  yield { type: "info", message: "Starting container..." };
+  composeUp(project, composeFile);
+
+  // Wait for container
+  if (!waitForContainer(name)) {
+    yield { type: "warn", message: `Container '${name}' not reachable after 30s — continuing anyway` };
+  }
+
+  // Run post-up hook
+  runHook("post-up", {
+    CONTAINER: name,
+    POD_DIR: podDir,
+    FEATURE_NAME: name,
+    COMPOSE_FILE: composeFile,
+    COMPOSE_PROJECT: project,
+  });
+
+  // Setup workspace
+  setupWorkspace(podDir, name);
+
+  yield { type: "success", message: "Up complete" };
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
+
+function copyEnvFiles(srcDir: string, dstDir: string): void {
+  try {
+    const output = execSync(
+      `find . -name ".env" -not -path "*/node_modules/*" -not -path "*/.git/*"`,
+      { cwd: srcDir, encoding: "utf-8", timeout: 10000 },
+    ).trim();
+
+    if (!output) return;
+
+    for (const envFile of output.split("\n")) {
+      const src = join(srcDir, envFile);
+      const dst = join(dstDir, envFile);
+      if (existsSync(src)) {
+        mkdirSync(join(dst, ".."), { recursive: true });
+        copyFileSync(src, dst);
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
 
 function getReposForPod(podDir: string): PodRepo[] {
   const repos: PodRepo[] = [];

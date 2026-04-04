@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { apiGet, apiPost, apiDelete } from "../client.js";
+import { apiGet, apiPost, apiDelete, apiStream } from "../client.js";
 import { ensureServer } from "../daemon.js";
 import {
   info,
@@ -9,6 +9,7 @@ import {
   header,
   colors,
   formatTable,
+  printEvent,
 } from "../output.js";
 import type { PodInfo, Repo, CacheInfo, LayerInfo } from "../../types.js";
 
@@ -170,6 +171,52 @@ export const infoCommand = new Command("info")
       formatTable(headers, rows, [4, 16, 14, 20]);
     }
     console.log();
+  });
+
+export const createCommand = new Command("create")
+  .description("Create a new pod")
+  .argument("<name>", "Feature/pod name")
+  .argument("[repos...]", "Repos to include (default: all)")
+  .option("--from <branch>", "Branch to start from")
+  .action(async (name: string, repos: string[], opts: { from?: string }) => {
+    if (!(await ensureServer())) {
+      errorOut("Could not connect to server");
+      process.exit(1);
+    }
+
+    try {
+      for await (const event of apiStream("/api/pods", {
+        name,
+        repos: repos.length > 0 ? repos : undefined,
+        from: opts.from,
+      })) {
+        printEvent(event);
+      }
+    } catch (err: any) {
+      errorOut(err.message);
+      process.exit(1);
+    }
+  });
+
+export const upCommand = new Command("up")
+  .description("Start or refresh a pod container")
+  .argument("<name>", "Pod name")
+  .action(async (name: string) => {
+    if (!(await ensureServer())) {
+      errorOut("Could not connect to server");
+      process.exit(1);
+    }
+
+    try {
+      for await (const event of apiStream(
+        `/api/pods/${encodeURIComponent(name)}/up`,
+      )) {
+        printEvent(event);
+      }
+    } catch (err: any) {
+      errorOut(err.message);
+      process.exit(1);
+    }
   });
 
 export const downCommand = new Command("down")
