@@ -7,10 +7,10 @@ import {
   ensureCollection,
   upsertChunks,
   deleteByFilePath,
-  deleteCollection,
-  baseCollectionName,
-  podCollectionName,
+  repoCollectionName,
   getExistingHashes,
+  upsertTombstones,
+  deleteBranch,
 } from "./qdrant.js";
 import { createIgnoreFilter, shouldIndex } from "./ignore.js";
 import { getChangedFiles, getDeletedFiles, getDefaultBranch } from "./git.js";
@@ -29,7 +29,7 @@ export async function indexBase(repo?: string): Promise<void> {
     }
 
     console.log(`\nIndexing base: ${repoName}`);
-    const collectionName = baseCollectionName(repoName);
+    const collectionName = repoCollectionName(repoName);
     await ensureCollection(collectionName);
 
     const ig = createIgnoreFilter(repoPath);
@@ -46,14 +46,14 @@ export async function indexBase(repo?: string): Promise<void> {
       const fileHash = hashContent(source);
 
       // Check if already indexed with same content
-      const existingHashes = await getExistingHashes(collectionName, relPath);
+      const existingHashes = await getExistingHashes(collectionName, relPath, "base");
       if (existingHashes.size > 0 && existingHashes.has(fileHash)) {
         skipped++;
         continue;
       }
 
       // Delete old chunks for this file
-      await deleteByFilePath(collectionName, relPath);
+      await deleteByFilePath(collectionName, relPath, "base");
 
       // Chunk the file
       const chunks = chunkFile(source, relPath, repoName);
@@ -62,14 +62,14 @@ export async function indexBase(repo?: string): Promise<void> {
 
       // Flush when batch is large enough
       if (pendingChunks.length >= config.embeddingBatchSize) {
-        await flushChunks(collectionName, pendingChunks);
+        await flushChunks(collectionName, pendingChunks, "base");
         pendingChunks.length = 0;
       }
     }
 
     // Flush remaining
     if (pendingChunks.length > 0) {
-      await flushChunks(collectionName, pendingChunks);
+      await flushChunks(collectionName, pendingChunks, "base");
     }
 
     console.log(`  Indexed: ${indexed} files (${skipped} unchanged, skipped)`);
@@ -91,9 +91,11 @@ export async function indexPod(podName: string): Promise<void> {
   const repos = discoverPodRepos(podDir);
   console.log(`\nDelta indexing pod: ${podName} (repos: ${repos.join(", ")})`);
 
+  const branch = `pod-${podName}`;
+
   for (const repoName of repos) {
     const repoPath = resolve(podDir, repoName);
-    const collectionName = podCollectionName(repoName, podName);
+    const collectionName = repoCollectionName(repoName);
     await ensureCollection(collectionName);
 
     const ig = createIgnoreFilter(repoPath);
@@ -107,9 +109,12 @@ export async function indexPod(podName: string): Promise<void> {
 
     console.log(`  ${repoName}: ${filesToIndex.length} changed, ${deletedFiles.length} deleted`);
 
-    // Delete points for deleted files
+    // Delete points for deleted files (scoped to this branch) and upsert tombstones
     for (const delFile of deletedFiles) {
-      await deleteByFilePath(collectionName, delFile);
+      await deleteByFilePath(collectionName, delFile, branch);
+    }
+    if (deletedFiles.length > 0) {
+      await upsertTombstones(collectionName, deletedFiles, repoName, branch);
     }
 
     // Index changed files
@@ -117,8 +122,8 @@ export async function indexPod(podName: string): Promise<void> {
     for (const filePath of filesToIndex) {
       const relPath = relative(repoPath, filePath);
 
-      // Delete old chunks for this file
-      await deleteByFilePath(collectionName, relPath);
+      // Delete old chunks for this file (scoped to branch)
+      await deleteByFilePath(collectionName, relPath, branch);
 
       // Chunk and queue
       const source = readFileSync(filePath, "utf-8");
@@ -127,7 +132,7 @@ export async function indexPod(podName: string): Promise<void> {
     }
 
     if (pendingChunks.length > 0) {
-      await flushChunks(collectionName, pendingChunks);
+      await flushChunks(collectionName, pendingChunks, branch);
     }
   }
 
@@ -140,15 +145,19 @@ export async function indexFile(
   absolutePath: string,
   repoName: string,
   repoPath: string,
-  collectionName: string
+  collectionName: string,
+  branch: string
 ): Promise<void> {
   const relPath = relative(repoPath, absolutePath);
 
-  // Delete old chunks
-  await deleteByFilePath(collectionName, relPath);
+  // Delete old chunks (scoped to branch)
+  await deleteByFilePath(collectionName, relPath, branch);
 
   if (!existsSync(absolutePath)) {
-    // File was deleted
+    // File was deleted — upsert tombstone if pod branch
+    if (branch.startsWith("pod-")) {
+      await upsertTombstones(collectionName, [relPath], repoName, branch);
+    }
     return;
   }
 
@@ -156,28 +165,28 @@ export async function indexFile(
   const chunks = chunkFile(source, relPath, repoName);
 
   if (chunks.length > 0) {
-    await flushChunks(collectionName, chunks);
+    await flushChunks(collectionName, chunks, branch);
   }
 }
 
-// ── Delete pod collections ───────────────────────────────────────────
+// ── Delete pod branch data ──────────────────────────────────────────
 
-export async function deletePodsCollections(podName: string): Promise<void> {
-  // Delete all repo collections for this pod
+export async function deletePodBranch(podName: string): Promise<void> {
   const repos = discoverLocalRepos();
+  const branch = `pod-${podName}`;
   for (const repo of repos) {
-    const name = podCollectionName(repo, podName);
-    await deleteCollection(name);
-    console.log(`  Deleted collection: ${name}`);
+    const col = repoCollectionName(repo);
+    await deleteBranch(col, branch);
+    console.log(`  Deleted branch ${branch} from collection: ${col}`);
   }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-async function flushChunks(collectionName: string, chunks: Chunk[]): Promise<void> {
+async function flushChunks(collectionName: string, chunks: Chunk[], branch: string): Promise<void> {
   const texts = chunks.map((c) => c.embeddingText);
   const embeddings = await embedTexts(texts);
-  await upsertChunks(collectionName, chunks, embeddings);
+  await upsertChunks(collectionName, chunks, embeddings, branch);
   process.stdout.write(`  ✓ Embedded ${chunks.length} chunks\n`);
 }
 

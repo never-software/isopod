@@ -4,7 +4,8 @@ import { spawn, execSync } from "child_process";
 import { config } from "./config.js";
 import { shouldIndex, createIgnoreFilter, INDEXABLE_EXTENSIONS } from "./ignore.js";
 import { indexFile, indexBase } from "./indexer.js";
-import { baseCollectionName, podCollectionName, deleteByFilePath, getStatus } from "./qdrant.js";
+import { repoCollectionName, deleteByFilePath, getStatus, getClient, upsertTombstones } from "./qdrant.js";
+import { getDeletedFiles } from "./git.js";
 
 // ── Disabled targets ────────────────────────────────────────────────
 
@@ -22,15 +23,16 @@ export function setDisabledTargets(disabled: Set<string>): void {
   writeFileSync(config.disabledTargetsFile, JSON.stringify({ disabled: Array.from(disabled) }, null, 2));
 }
 
-export function toggleTarget(collectionName: string): boolean {
+export function toggleTarget(collectionName: string, branch: string): boolean {
+  const key = `${collectionName}|${branch}`;
   const disabled = getDisabledTargets();
-  if (disabled.has(collectionName)) {
-    disabled.delete(collectionName);
+  if (disabled.has(key)) {
+    disabled.delete(key);
   } else {
-    disabled.add(collectionName);
+    disabled.add(key);
   }
   setDisabledTargets(disabled);
-  return !disabled.has(collectionName); // returns new enabled state
+  return !disabled.has(key); // returns new enabled state
 }
 
 // ── Daemon management ────────────────────────────────────────────────
@@ -123,7 +125,12 @@ export interface WatchTarget {
   repoName: string;
   repoPath: string;
   collectionName: string;
+  branch: string;
   podName?: string;
+}
+
+export function targetKey(target: WatchTarget): string {
+  return `${target.collectionName}|${target.branch}`;
 }
 
 interface RepoWatch extends WatchTarget {
@@ -142,7 +149,8 @@ export function discoverWatchTargets(): WatchTarget[] {
       targets.push({
         repoName: name,
         repoPath,
-        collectionName: baseCollectionName(name),
+        collectionName: repoCollectionName(name),
+        branch: "base",
       });
     }
   }
@@ -158,7 +166,8 @@ export function discoverWatchTargets(): WatchTarget[] {
         targets.push({
           repoName,
           repoPath,
-          collectionName: podCollectionName(repoName, podName),
+          collectionName: repoCollectionName(repoName),
+          branch: `pod-${podName}`,
           podName,
         });
       }
@@ -188,24 +197,44 @@ export async function startWatcher(): Promise<void> {
     process.exit(0);
   });
 
-  // Index any base repos whose collections don't exist yet
-  const baseTargets = discoverWatchTargets().filter((t) => !t.podName);
-  if (baseTargets.length > 0) {
-    const existing = await getStatus();
-    const existingNames = new Set(existing.map((c) => c.name));
-
-    for (const t of baseTargets) {
-      if (!existingNames.has(t.collectionName)) {
-        console.log(`[${ts()}] Base collection missing: ${t.collectionName} — indexing ${t.repoName}...`);
+  // Index any base repos whose collections don't have base-branch data yet
+  const allTargets = discoverWatchTargets();
+  const baseTargets = allTargets.filter((t) => !t.podName);
+  for (const t of baseTargets) {
+    try {
+      const probe = await getClient().scroll(t.collectionName, {
+        filter: { must: [{ key: "branch", match: { value: "base" } }] },
+        limit: 1,
+      });
+      if (probe.points.length === 0) {
+        console.log(`[${ts()}] No base data in ${t.collectionName} — indexing ${t.repoName}...`);
         await indexBase(t.repoName);
       }
+    } catch {
+      // Collection doesn't exist yet — index base
+      console.log(`[${ts()}] Collection missing: ${t.collectionName} — indexing ${t.repoName}...`);
+      await indexBase(t.repoName);
+    }
+  }
+
+  // Seed tombstones for pod targets (catches deletions committed before watcher started)
+  const podTargets = allTargets.filter((t) => t.podName);
+  for (const t of podTargets) {
+    try {
+      const deletedFiles = getDeletedFiles(t.repoPath);
+      if (deletedFiles.length > 0) {
+        await upsertTombstones(t.collectionName, deletedFiles, t.repoName, t.branch);
+        console.log(`[${ts()}] Seeded ${deletedFiles.length} tombstones for ${targetKey(t)}`);
+      }
+    } catch (error: any) {
+      console.error(`[${ts()}] Error seeding tombstones for ${targetKey(t)}: ${error.message}`);
     }
   }
 
   let targets: RepoWatch[] = discoverWatchTargets().map((t) => ({ ...t, lastSeen: new Map() }));
   console.log(`[${ts()}] Watching ${targets.length} repo targets`);
   for (const t of targets) {
-    console.log(`  ${t.collectionName} → ${t.repoPath}`);
+    console.log(`  ${targetKey(t)} → ${t.repoPath}`);
   }
   console.log(`[${ts()}] Watcher ready (polling every ${POLL_INTERVAL / 1000}s).`);
 
@@ -229,7 +258,7 @@ export async function startWatcher(): Promise<void> {
       const disabled = getDisabledTargets();
       for (const target of targets) {
         if (!running) break;
-        if (disabled.has(target.collectionName)) continue;
+        if (disabled.has(targetKey(target))) continue;
         await pollRepo(target);
       }
     } catch (error: any) {
@@ -303,8 +332,12 @@ async function pollRepo(target: RepoWatch): Promise<void> {
     if (mtime === 0) {
       // File deleted
       try {
-        await deleteByFilePath(target.collectionName, filePath);
-        console.log(`[${ts()}] Deleted: ${filePath} ← ${target.collectionName}`);
+        await deleteByFilePath(target.collectionName, filePath, target.branch);
+        // Upsert tombstone for pod targets so deleted files don't bleed through from base
+        if (target.branch.startsWith("pod-")) {
+          await upsertTombstones(target.collectionName, [filePath], target.repoName, target.branch);
+        }
+        console.log(`[${ts()}] Deleted: ${filePath} ← ${targetKey(target)}`);
       } catch (error: any) {
         console.error(`[${ts()}] Error deleting ${filePath}: ${error.message}`);
       }
@@ -317,8 +350,8 @@ async function pollRepo(target: RepoWatch): Promise<void> {
       }
 
       try {
-        await indexFile(absPath, target.repoName, target.repoPath, target.collectionName);
-        console.log(`[${ts()}] Indexed: ${filePath} → ${target.collectionName}`);
+        await indexFile(absPath, target.repoName, target.repoPath, target.collectionName, target.branch);
+        console.log(`[${ts()}] Indexed: ${filePath} → ${targetKey(target)}`);
       } catch (error: any) {
         console.error(`[${ts()}] Error indexing ${filePath}: ${error.message}`);
       }
