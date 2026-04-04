@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { indexBase, indexPod, deletePodsCollections } from "./indexer.js";
 import { search, getStatus } from "./qdrant.js";
 import { startDaemon, stopDaemon, daemonStatus, startWatcher } from "./watcher.js";
+import { startServer } from "./server.js";
 
 const program = new Command();
 
@@ -101,6 +102,14 @@ program
       console.log(`  \x1b[36m${col.name}\x1b[0m: ${col.points} points`);
     }
     daemonStatus();
+  });
+
+program
+  .command("dashboard")
+  .description("Start the web dashboard")
+  .option("--port <number>", "Port to serve on", String(config.dashboardPort))
+  .action(async (opts: { port: string }) => {
+    await startServer(parseInt(opts.port, 10));
   });
 
 // Internal command: the daemon forks itself with this

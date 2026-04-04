@@ -3,8 +3,35 @@ import { resolve, relative, join } from "path";
 import { spawn, execSync } from "child_process";
 import { config } from "./config.js";
 import { shouldIndex, createIgnoreFilter, INDEXABLE_EXTENSIONS } from "./ignore.js";
-import { indexFile } from "./indexer.js";
-import { baseCollectionName, podCollectionName, deleteByFilePath } from "./qdrant.js";
+import { indexFile, indexBase } from "./indexer.js";
+import { baseCollectionName, podCollectionName, deleteByFilePath, getStatus } from "./qdrant.js";
+
+// ── Disabled targets ────────────────────────────────────────────────
+
+export function getDisabledTargets(): Set<string> {
+  try {
+    if (!existsSync(config.disabledTargetsFile)) return new Set();
+    const data = JSON.parse(readFileSync(config.disabledTargetsFile, "utf-8"));
+    return new Set(data.disabled || []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function setDisabledTargets(disabled: Set<string>): void {
+  writeFileSync(config.disabledTargetsFile, JSON.stringify({ disabled: Array.from(disabled) }, null, 2));
+}
+
+export function toggleTarget(collectionName: string): boolean {
+  const disabled = getDisabledTargets();
+  if (disabled.has(collectionName)) {
+    disabled.delete(collectionName);
+  } else {
+    disabled.add(collectionName);
+  }
+  setDisabledTargets(disabled);
+  return !disabled.has(collectionName); // returns new enabled state
+}
 
 // ── Daemon management ────────────────────────────────────────────────
 
@@ -92,13 +119,53 @@ function isDaemonRunning(): boolean {
 
 const POLL_INTERVAL = 5000; // 5 seconds between polls
 
-interface RepoWatch {
+export interface WatchTarget {
   repoName: string;
   repoPath: string;
   collectionName: string;
   podName?: string;
+}
+
+interface RepoWatch extends WatchTarget {
   /** mtime of last-seen changes — tracks which files we've already indexed */
   lastSeen: Map<string, number>;
+}
+
+export function discoverWatchTargets(): WatchTarget[] {
+  const targets: WatchTarget[] = [];
+
+  // Base repos
+  if (existsSync(config.reposDir)) {
+    for (const name of listDirs(config.reposDir)) {
+      const repoPath = join(config.reposDir, name);
+      if (!existsSync(join(repoPath, ".git"))) continue;
+      targets.push({
+        repoName: name,
+        repoPath,
+        collectionName: baseCollectionName(name),
+      });
+    }
+  }
+
+  // Pod repos
+  if (existsSync(config.podsDir)) {
+    for (const podName of listDirs(config.podsDir)) {
+      const podDir = join(config.podsDir, podName);
+      for (const repoName of listDirs(podDir)) {
+        if (repoName.startsWith(".")) continue;
+        const repoPath = join(podDir, repoName);
+        if (!existsSync(join(repoPath, ".git"))) continue;
+        targets.push({
+          repoName,
+          repoPath,
+          collectionName: podCollectionName(repoName, podName),
+          podName,
+        });
+      }
+    }
+  }
+
+  return targets;
 }
 
 export async function startWatcher(): Promise<void> {
@@ -121,48 +188,21 @@ export async function startWatcher(): Promise<void> {
     process.exit(0);
   });
 
-  // Discover repos and pods to watch
-  function discoverWatchTargets(): RepoWatch[] {
-    const targets: RepoWatch[] = [];
+  // Index any base repos whose collections don't exist yet
+  const baseTargets = discoverWatchTargets().filter((t) => !t.podName);
+  if (baseTargets.length > 0) {
+    const existing = await getStatus();
+    const existingNames = new Set(existing.map((c) => c.name));
 
-    // Base repos
-    if (existsSync(config.reposDir)) {
-      for (const name of listDirs(config.reposDir)) {
-        const repoPath = join(config.reposDir, name);
-        if (!existsSync(join(repoPath, ".git"))) continue;
-        targets.push({
-          repoName: name,
-          repoPath,
-          collectionName: baseCollectionName(name),
-          lastSeen: new Map(),
-        });
+    for (const t of baseTargets) {
+      if (!existingNames.has(t.collectionName)) {
+        console.log(`[${ts()}] Base collection missing: ${t.collectionName} — indexing ${t.repoName}...`);
+        await indexBase(t.repoName);
       }
     }
-
-    // Pod repos
-    if (existsSync(config.podsDir)) {
-      for (const podName of listDirs(config.podsDir)) {
-        const podDir = join(config.podsDir, podName);
-        for (const repoName of listDirs(podDir)) {
-          // Skip non-repo dirs (.home, .roo, .claude, etc.)
-          if (repoName.startsWith(".")) continue;
-          const repoPath = join(podDir, repoName);
-          if (!existsSync(join(repoPath, ".git"))) continue;
-          targets.push({
-            repoName,
-            repoPath,
-            collectionName: podCollectionName(repoName, podName),
-            podName,
-            lastSeen: new Map(),
-          });
-        }
-      }
-    }
-
-    return targets;
   }
 
-  let targets = discoverWatchTargets();
+  let targets: RepoWatch[] = discoverWatchTargets().map((t) => ({ ...t, lastSeen: new Map() }));
   console.log(`[${ts()}] Watching ${targets.length} repo targets`);
   for (const t of targets) {
     console.log(`  ${t.collectionName} → ${t.repoPath}`);
@@ -179,15 +219,17 @@ export async function startWatcher(): Promise<void> {
     // Re-discover every 12 polls (~60 seconds)
     pollCount++;
     if (pollCount % 12 === 0) {
-      targets = discoverWatchTargets();
+      targets = discoverWatchTargets().map((t) => ({ ...t, lastSeen: new Map() }));
     }
 
     if (processing) continue;
     processing = true;
 
     try {
+      const disabled = getDisabledTargets();
       for (const target of targets) {
         if (!running) break;
+        if (disabled.has(target.collectionName)) continue;
         await pollRepo(target);
       }
     } catch (error: any) {

@@ -16,3 +16,7 @@ indexer/node_modules/
 indexer/.env
 indexer/.indexer.pid
 indexer/.indexer.log
+indexer/.indexer-disabled-targets.json
+
+# Dashboard UI
+ui/node_modules/
