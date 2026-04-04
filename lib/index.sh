@@ -28,8 +28,12 @@ cmd_index() {
       local action="${1:-status}"
       node "$INDEXER" daemon "$action"
       ;;
+    dashboard)
+      shift
+      node "$INDEXER" dashboard "$@"
+      ;;
     *)
-      error "Usage: isopod index [status|base [repo]|pod <name>|daemon start|stop|status]"
+      error "Usage: isopod index [status|base [repo]|pod <name>|daemon start|stop|status|dashboard]"
       ;;
   esac
 }

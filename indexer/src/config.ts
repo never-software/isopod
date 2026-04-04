@@ -45,6 +45,7 @@ export const config = {
   indexerRoot,
   pidFile: resolve(indexerRoot, ".indexer.pid"),
   logFile: resolve(indexerRoot, ".indexer.log"),
+  disabledTargetsFile: resolve(indexerRoot, ".indexer-disabled-targets.json"),
 
   // Chunking
   maxChunkTokens: 500,
@@ -59,6 +60,9 @@ export const config = {
 
   // Collection naming
   collectionPrefix: "isopod",
+
+  // Dashboard
+  get dashboardPort() { return parseInt(process.env.DASHBOARD_PORT || "3141", 10); },
 };
 
 export type Config = typeof config;

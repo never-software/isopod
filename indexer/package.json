@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cd ../ui && npm run build",
+    "build:server": "tsc",
     "dev": "tsc --watch",
+    "dev:dashboard": "cd ../ui && npm run dev",
     "start": "node dist/cli.js"
   },
   "dependencies": {
