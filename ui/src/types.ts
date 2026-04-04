@@ -23,6 +23,13 @@ export interface Collection {
   points: number;
 }
 
+export interface BranchInfo {
+  collection: string;
+  branch: string;
+  points: number;
+  tombstones: number;
+}
+
 export interface DaemonStatus {
   running: boolean;
   pid: number | null;
@@ -32,6 +39,7 @@ export interface WatchTarget {
   repoName: string;
   repoPath: string;
   collectionName: string;
+  branch: string;
   podName?: string;
   enabled: boolean;
 }

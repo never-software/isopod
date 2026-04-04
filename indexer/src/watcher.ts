@@ -1,10 +1,12 @@
-import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync, statSync } from "fs";
-import { resolve, relative, join } from "path";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, statSync } from "fs";
+import { resolve, join } from "path";
 import { spawn, execSync } from "child_process";
 import { config } from "./config.js";
 import { shouldIndex, createIgnoreFilter, INDEXABLE_EXTENSIONS } from "./ignore.js";
 import { indexFile, indexBase } from "./indexer.js";
-import { baseCollectionName, podCollectionName, deleteByFilePath, getStatus } from "./qdrant.js";
+import { repoCollectionName, deleteByFilePath, getClient, upsertTombstones } from "./qdrant.js";
+import { getDeletedFiles } from "./git.js";
+import { listDirs, sleep } from "./utils.js";
 
 // ── Disabled targets ────────────────────────────────────────────────
 
@@ -22,15 +24,16 @@ export function setDisabledTargets(disabled: Set<string>): void {
   writeFileSync(config.disabledTargetsFile, JSON.stringify({ disabled: Array.from(disabled) }, null, 2));
 }
 
-export function toggleTarget(collectionName: string): boolean {
+export function toggleTarget(collectionName: string, branch: string): boolean {
+  const key = `${collectionName}|${branch}`;
   const disabled = getDisabledTargets();
-  if (disabled.has(collectionName)) {
-    disabled.delete(collectionName);
+  if (disabled.has(key)) {
+    disabled.delete(key);
   } else {
-    disabled.add(collectionName);
+    disabled.add(key);
   }
   setDisabledTargets(disabled);
-  return !disabled.has(collectionName); // returns new enabled state
+  return !disabled.has(key); // returns new enabled state
 }
 
 // ── Daemon management ────────────────────────────────────────────────
@@ -123,7 +126,12 @@ export interface WatchTarget {
   repoName: string;
   repoPath: string;
   collectionName: string;
+  branch: string;
   podName?: string;
+}
+
+export function targetKey(target: WatchTarget): string {
+  return `${target.collectionName}|${target.branch}`;
 }
 
 interface RepoWatch extends WatchTarget {
@@ -142,7 +150,8 @@ export function discoverWatchTargets(): WatchTarget[] {
       targets.push({
         repoName: name,
         repoPath,
-        collectionName: baseCollectionName(name),
+        collectionName: repoCollectionName(name),
+        branch: "base",
       });
     }
   }
@@ -158,7 +167,8 @@ export function discoverWatchTargets(): WatchTarget[] {
         targets.push({
           repoName,
           repoPath,
-          collectionName: podCollectionName(repoName, podName),
+          collectionName: repoCollectionName(repoName),
+          branch: `pod-${podName}`,
           podName,
         });
       }
@@ -188,24 +198,44 @@ export async function startWatcher(): Promise<void> {
     process.exit(0);
   });
 
-  // Index any base repos whose collections don't exist yet
-  const baseTargets = discoverWatchTargets().filter((t) => !t.podName);
-  if (baseTargets.length > 0) {
-    const existing = await getStatus();
-    const existingNames = new Set(existing.map((c) => c.name));
-
-    for (const t of baseTargets) {
-      if (!existingNames.has(t.collectionName)) {
-        console.log(`[${ts()}] Base collection missing: ${t.collectionName} — indexing ${t.repoName}...`);
+  // Index any base repos whose collections don't have base-branch data yet
+  const allTargets = discoverWatchTargets();
+  const baseTargets = allTargets.filter((t) => !t.podName);
+  for (const t of baseTargets) {
+    try {
+      const probe = await getClient().scroll(t.collectionName, {
+        filter: { must: [{ key: "branch", match: { value: "base" } }] },
+        limit: 1,
+      });
+      if (probe.points.length === 0) {
+        console.log(`[${ts()}] No base data in ${t.collectionName} — indexing ${t.repoName}...`);
         await indexBase(t.repoName);
       }
+    } catch {
+      // Collection doesn't exist yet — index base
+      console.log(`[${ts()}] Collection missing: ${t.collectionName} — indexing ${t.repoName}...`);
+      await indexBase(t.repoName);
+    }
+  }
+
+  // Seed tombstones for pod targets (catches deletions committed before watcher started)
+  const podTargets = allTargets.filter((t) => t.podName);
+  for (const t of podTargets) {
+    try {
+      const deletedFiles = getDeletedFiles(t.repoPath);
+      if (deletedFiles.length > 0) {
+        await upsertTombstones(t.collectionName, deletedFiles, t.repoName, t.branch);
+        console.log(`[${ts()}] Seeded ${deletedFiles.length} tombstones for ${targetKey(t)}`);
+      }
+    } catch (error: any) {
+      console.error(`[${ts()}] Error seeding tombstones for ${targetKey(t)}: ${error.message}`);
     }
   }
 
   let targets: RepoWatch[] = discoverWatchTargets().map((t) => ({ ...t, lastSeen: new Map() }));
   console.log(`[${ts()}] Watching ${targets.length} repo targets`);
   for (const t of targets) {
-    console.log(`  ${t.collectionName} → ${t.repoPath}`);
+    console.log(`  ${targetKey(t)} → ${t.repoPath}`);
   }
   console.log(`[${ts()}] Watcher ready (polling every ${POLL_INTERVAL / 1000}s).`);
 
@@ -216,10 +246,14 @@ export async function startWatcher(): Promise<void> {
     await sleep(POLL_INTERVAL);
     if (!running) break;
 
-    // Re-discover every 12 polls (~60 seconds)
+    // Re-discover every 12 polls (~60 seconds), preserving lastSeen state
     pollCount++;
     if (pollCount % 12 === 0) {
-      targets = discoverWatchTargets().map((t) => ({ ...t, lastSeen: new Map() }));
+      const existingByKey = new Map(targets.map((t) => [targetKey(t), t]));
+      targets = discoverWatchTargets().map((t) => {
+        const existing = existingByKey.get(targetKey(t));
+        return { ...t, lastSeen: existing?.lastSeen ?? new Map() };
+      });
     }
 
     if (processing) continue;
@@ -229,7 +263,7 @@ export async function startWatcher(): Promise<void> {
       const disabled = getDisabledTargets();
       for (const target of targets) {
         if (!running) break;
-        if (disabled.has(target.collectionName)) continue;
+        if (disabled.has(targetKey(target))) continue;
         await pollRepo(target);
       }
     } catch (error: any) {
@@ -246,7 +280,7 @@ function getModifiedFiles(repoPath: string): Map<string, number> {
 
   try {
     // Modified + untracked files via git status
-    const output = execSync("git status --porcelain -uall", {
+    const output = execSync("git status --porcelain -unormal", {
       cwd: repoPath,
       encoding: "utf-8",
       timeout: 10000,
@@ -303,8 +337,12 @@ async function pollRepo(target: RepoWatch): Promise<void> {
     if (mtime === 0) {
       // File deleted
       try {
-        await deleteByFilePath(target.collectionName, filePath);
-        console.log(`[${ts()}] Deleted: ${filePath} ← ${target.collectionName}`);
+        await deleteByFilePath(target.collectionName, filePath, target.branch);
+        // Upsert tombstone for pod targets so deleted files don't bleed through from base
+        if (target.branch.startsWith("pod-")) {
+          await upsertTombstones(target.collectionName, [filePath], target.repoName, target.branch);
+        }
+        console.log(`[${ts()}] Deleted: ${filePath} ← ${targetKey(target)}`);
       } catch (error: any) {
         console.error(`[${ts()}] Error deleting ${filePath}: ${error.message}`);
       }
@@ -317,8 +355,8 @@ async function pollRepo(target: RepoWatch): Promise<void> {
       }
 
       try {
-        await indexFile(absPath, target.repoName, target.repoPath, target.collectionName);
-        console.log(`[${ts()}] Indexed: ${filePath} → ${target.collectionName}`);
+        await indexFile(absPath, target.repoName, target.repoPath, target.collectionName, target.branch);
+        console.log(`[${ts()}] Indexed: ${filePath} → ${targetKey(target)}`);
       } catch (error: any) {
         console.error(`[${ts()}] Error indexing ${filePath}: ${error.message}`);
       }
@@ -337,20 +375,6 @@ async function pollRepo(target: RepoWatch): Promise<void> {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-
-function listDirs(dir: string): string[] {
-  try {
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
-  } catch {
-    return [];
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function ts(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);

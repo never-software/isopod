@@ -20,3 +20,6 @@ indexer/.indexer-disabled-targets.json
 
 # Dashboard UI
 ui/node_modules/
+
+# Claude Code plans
+plans/

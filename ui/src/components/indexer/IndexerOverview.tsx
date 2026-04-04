@@ -1,10 +1,11 @@
 import { createResource, For, Show, createSignal, onCleanup } from "solid-js";
-import { fetchCollections, fetchDaemon, fetchLogs, fetchWatchTargets, daemonStart, daemonStop, deleteCollectionApi, deleteAllCollections, toggleWatchTarget, toggleWatchPod } from "../../api";
-import type { Collection, WatchTarget } from "../../types";
+import { fetchCollections, fetchBranches, fetchDaemon, fetchLogs, fetchWatchTargets, daemonStart, daemonStop, deleteCollectionApi, deleteBranchApi, deleteAllCollections, toggleWatchTarget, toggleWatchPod } from "../../api";
+import type { Collection, BranchInfo, WatchTarget } from "../../types";
 import { ActivityLog } from "./ActivityLog";
 
 export function IndexerOverview() {
   const [collections, { refetch: refetchCollections }] = createResource(fetchCollections, { initialValue: [] });
+  const [branches, { refetch: refetchBranches }] = createResource(fetchBranches, { initialValue: [] });
   const [daemon, { refetch: refetchDaemon }] = createResource(fetchDaemon, { initialValue: { running: false, pid: null } });
   const [watchTargets, { refetch: refetchTargets }] = createResource(fetchWatchTargets, { initialValue: [] });
   const [tab, setTab] = createSignal<"collections" | "activity" | "targets">("collections");
@@ -14,6 +15,7 @@ export function IndexerOverview() {
   const interval = setInterval(() => {
     refetchDaemon();
     refetchCollections();
+    refetchBranches();
     refetchTargets();
   }, 5000);
   onCleanup(() => clearInterval(interval));
@@ -21,12 +23,7 @@ export function IndexerOverview() {
   // Derive stats
   const totalPoints = () => collections()!.reduce((sum, c) => sum + c.points, 0);
   const sortedCollections = () =>
-    [...collections()!].sort((a, b) => {
-      const aBase = a.name.endsWith("-base");
-      const bBase = b.name.endsWith("-base");
-      if (aBase !== bBase) return aBase ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
+    [...collections()!].sort((a, b) => a.name.localeCompare(b.name));
 
   async function toggleDaemon() {
     setDaemonLoading(true);
@@ -81,6 +78,7 @@ export function IndexerOverview() {
       <div class="flex-1 min-h-0 flex flex-col overflow-auto">
         <Show when={tab() === "collections"}>
           <CollectionTable collections={sortedCollections()} onRefresh={refetchCollections} />
+          <BranchesSection branches={branches()!} onRefresh={() => { refetchBranches(); refetchCollections(); }} />
         </Show>
         <Show when={tab() === "activity"}>
           <ActivityLog />
@@ -151,7 +149,7 @@ function CollectionTable(props: { collections: Collection[]; onRefresh: () => vo
   const [deleting, setDeleting] = createSignal<string | null>(null);
 
   async function handleDelete(name: string) {
-    if (!confirm(`Delete collection "${name}"?`)) return;
+    if (!confirm(`Delete collection "${name}"? This removes base and all pod branch data.`)) return;
     setDeleting(name);
     try {
       await deleteCollectionApi(name);
@@ -191,47 +189,102 @@ function CollectionTable(props: { collections: Collection[]; onRefresh: () => vo
           <thead>
             <tr class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wider">
               <th class="text-left px-4 py-2.5 font-medium">Collection</th>
-              <th class="text-left px-4 py-2.5 font-medium">Type</th>
               <th class="text-right px-4 py-2.5 font-medium">Chunks</th>
               <th class="w-16"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-800/50">
             <For each={props.collections}>
-              {(col) => {
-                const isBase = col.name.endsWith("-base");
-                return (
-                  <tr class="hover:bg-zinc-800/30 transition-colors group">
-                    <td class="px-4 py-2.5 font-mono text-xs">{col.name}</td>
-                    <td class="px-4 py-2.5">
-                      <span
-                        class={`text-xs px-1.5 py-0.5 rounded ${
-                          isBase
-                            ? "bg-cyan-900/30 text-cyan-400"
-                            : "bg-violet-900/30 text-violet-400"
-                        }`}
-                      >
-                        {isBase ? "base" : "pod"}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-right font-mono text-zinc-400">
-                      {col.points.toLocaleString()}
-                    </td>
-                    <td class="px-4 py-2.5 text-right">
-                      <button
-                        class="text-xs text-red-400/70 hover:text-red-400 transition-colors disabled:opacity-50"
-                        onClick={() => handleDelete(col.name)}
-                        disabled={deleting() !== null}
-                      >
-                        {deleting() === col.name ? "..." : "Delete"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }}
+              {(col) => (
+                <tr class="hover:bg-zinc-800/30 transition-colors group">
+                  <td class="px-4 py-2.5 font-mono text-xs">{col.name}</td>
+                  <td class="px-4 py-2.5 text-right font-mono text-zinc-400">
+                    {col.points.toLocaleString()}
+                  </td>
+                  <td class="px-4 py-2.5 text-right">
+                    <button
+                      class="text-xs text-red-400/70 hover:text-red-400 transition-colors disabled:opacity-50"
+                      onClick={() => handleDelete(col.name)}
+                      disabled={deleting() !== null}
+                    >
+                      {deleting() === col.name ? "..." : "Delete"}
+                    </button>
+                  </td>
+                </tr>
+              )}
             </For>
           </tbody>
         </table>
+      </div>
+    </Show>
+  );
+}
+
+function BranchesSection(props: { branches: BranchInfo[]; onRefresh: () => void }) {
+  const podBranches = () => props.branches.filter((b) => b.branch !== "base");
+  const [deleting, setDeleting] = createSignal<string | null>(null);
+
+  async function handleDelete(collection: string, branch: string) {
+    if (!confirm(`Delete branch "${branch}" from ${collection}?`)) return;
+    const key = `${collection}|${branch}`;
+    setDeleting(key);
+    try {
+      await deleteBranchApi(collection, branch);
+      props.onRefresh();
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  return (
+    <Show when={podBranches().length > 0}>
+      <div class="mt-6">
+        <h3 class="text-sm font-medium text-zinc-400 mb-2">Branches</h3>
+        <div class="border border-zinc-800 rounded-lg overflow-hidden">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wider">
+                <th class="text-left px-4 py-2.5 font-medium">Collection</th>
+                <th class="text-left px-4 py-2.5 font-medium">Branch</th>
+                <th class="text-right px-4 py-2.5 font-medium">Chunks</th>
+                <th class="text-right px-4 py-2.5 font-medium">Tombstones</th>
+                <th class="w-16"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800/50">
+              <For each={podBranches()}>
+                {(b) => {
+                  const key = `${b.collection}|${b.branch}`;
+                  return (
+                    <tr class="hover:bg-zinc-800/30 transition-colors">
+                      <td class="px-4 py-2.5 font-mono text-xs text-zinc-400">{b.collection}</td>
+                      <td class="px-4 py-2.5">
+                        <span class="text-xs px-1.5 py-0.5 rounded bg-violet-900/30 text-violet-400">
+                          {b.branch}
+                        </span>
+                      </td>
+                      <td class="px-4 py-2.5 text-right font-mono text-zinc-400">
+                        {b.points.toLocaleString()}
+                      </td>
+                      <td class="px-4 py-2.5 text-right font-mono text-zinc-500">
+                        {b.tombstones > 0 ? b.tombstones : "—"}
+                      </td>
+                      <td class="px-4 py-2.5 text-right">
+                        <button
+                          class="text-xs text-red-400/70 hover:text-red-400 transition-colors disabled:opacity-50"
+                          onClick={() => handleDelete(b.collection, b.branch)}
+                          disabled={deleting() !== null}
+                        >
+                          {deleting() === key ? "..." : "Delete"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }}
+              </For>
+            </tbody>
+          </table>
+        </div>
       </div>
     </Show>
   );
@@ -251,8 +304,8 @@ function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void
     return groups;
   };
 
-  async function handleToggle(collectionName: string) {
-    await toggleWatchTarget(collectionName);
+  async function handleToggle(target: WatchTarget) {
+    await toggleWatchTarget(target.collectionName, target.branch);
     props.onRefresh();
   }
 
@@ -270,7 +323,7 @@ function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void
           </div>
           <div class="space-y-1">
             <For each={baseTargets()}>
-              {(t) => <TargetRow target={t} onToggle={() => handleToggle(t.collectionName)} />}
+              {(t) => <TargetRow target={t} onToggle={() => handleToggle(t)} />}
             </For>
           </div>
         </div>
@@ -296,7 +349,7 @@ function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void
               <Show when={!noneEnabled()}>
                 <div class="space-y-1">
                   <For each={targets}>
-                    {(t) => <TargetRow target={t} onToggle={() => handleToggle(t.collectionName)} />}
+                    {(t) => <TargetRow target={t} onToggle={() => handleToggle(t)} />}
                   </For>
                 </div>
               </Show>
@@ -320,6 +373,13 @@ function TargetRow(props: { target: WatchTarget; onToggle: () => void }) {
       <div class="flex items-center gap-2">
         <span class={`font-medium ${props.target.enabled ? "text-zinc-300" : "text-zinc-500"}`}>
           {props.target.repoName}
+        </span>
+        <span class={`px-1.5 py-0.5 rounded ${
+          props.target.branch === "base"
+            ? "bg-cyan-900/30 text-cyan-400"
+            : "bg-violet-900/30 text-violet-400"
+        }`}>
+          {props.target.branch}
         </span>
         <span class="font-mono text-zinc-600 truncate">{props.target.collectionName}</span>
       </div>

@@ -2,7 +2,7 @@
 
 import { Command } from "commander";
 import { config } from "./config.js";
-import { indexBase, indexPod, deletePodsCollections } from "./indexer.js";
+import { indexBase, indexPod, deletePodBranch } from "./indexer.js";
 import { search, getStatus } from "./qdrant.js";
 import { startDaemon, stopDaemon, daemonStatus, startWatcher } from "./watcher.js";
 import { startServer } from "./server.js";
@@ -35,7 +35,7 @@ program
   .description("Delete all collections for a pod")
   .argument("<pod>", "Pod name")
   .action(async (pod: string) => {
-    await deletePodsCollections(pod);
+    await deletePodBranch(pod);
   });
 
 program
