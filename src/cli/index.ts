@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { serverCommand } from "./commands/server.js";
+import { listCommand, statusCommand, infoCommand } from "./commands/pods.js";
 import { apiGet } from "./client.js";
 import { ensureServer } from "./daemon.js";
 import { success, error as errorOut } from "./output.js";
@@ -28,10 +29,9 @@ program
     success(`Server is healthy (PID ${data.pid})`);
   });
 
-// Placeholder commands — will be filled in during later phases
-// program.addCommand(podsCommand);
-// program.addCommand(dbCommand);
-// program.addCommand(cacheCommand);
-// program.addCommand(systemCommand);
+// Pod read-only commands
+program.addCommand(listCommand);
+program.addCommand(statusCommand);
+program.addCommand(infoCommand);
 
 program.parse();

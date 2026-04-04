@@ -4,6 +4,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { config } from "../config.js";
+import { podRoutes, repoRoutes } from "./routes/pods.js";
+import { systemRoutes } from "./routes/system.js";
 
 export const app = new Hono();
 
@@ -15,10 +17,10 @@ app.get("/health", (c) => {
   return c.json({ ok: true, pid: process.pid });
 });
 
-// API routes will be mounted here in later phases
-// app.route("/api/pods", podRoutes);
-// app.route("/api/db", dbRoutes);
-// etc.
+// API routes
+app.route("/api/pods", podRoutes);
+app.route("/api/repos", repoRoutes);
+app.route("/api/system", systemRoutes);
 
 // Static file serving for SolidJS dashboard
 const MIME_TYPES: Record<string, string> = {
