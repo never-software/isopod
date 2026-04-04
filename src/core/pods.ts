@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync, readdirSync, statSync, rmSync } from "fs";
 import { join } from "path";
 import { execSync } from "child_process";
 import { config } from "../config.js";
-import { getContainerStatuses, getAllContainerStatuses } from "./docker.js";
+import { getContainerStatuses } from "./docker.js";
+import { teardownWorkspace } from "./workspace.js";
 import type { PodInfo, PodRepo } from "../types.js";
 
 /**
@@ -85,6 +86,105 @@ export function listRepos(): Array<{ name: string; defaultBranch: string }> {
       const repoPath = join(config.reposDir, name);
       return { name, defaultBranch: detectDefaultBranch(repoPath) };
     });
+}
+
+// ── Mutations ────────────────────────────────────────────────────────
+
+/**
+ * Stop a pod container (preserves data).
+ */
+export function downPod(name: string): void {
+  const podDir = join(config.podsDir, name);
+  if (!existsSync(podDir)) {
+    throw new Error(`Pod '${name}' not found`);
+  }
+
+  // Run teardown workspace hook
+  try {
+    teardownWorkspace(name);
+  } catch {
+    // Non-fatal
+  }
+
+  const composeFile = join(podDir, "docker-compose.yml");
+  const project = `isopod-${name}`;
+
+  execSync(`docker compose -p "${project}" -f "${composeFile}" stop`, {
+    stdio: "inherit",
+    timeout: 120000,
+  });
+}
+
+/**
+ * Remove a pod: stop container, remove volumes, delete directory.
+ */
+export function removePod(name: string, opts: { force?: boolean } = {}): void {
+  const podDir = join(config.podsDir, name);
+  if (!existsSync(podDir)) {
+    throw new Error(`Pod '${name}' not found`);
+  }
+
+  // Run teardown workspace hook
+  try {
+    teardownWorkspace(name, { removing: true });
+  } catch {
+    // Non-fatal
+  }
+
+  const composeFile = join(podDir, "docker-compose.yml");
+  const project = `isopod-${name}`;
+
+  // Stop and remove container + volumes
+  if (existsSync(composeFile)) {
+    try {
+      execSync(
+        `docker compose -p "${project}" -f "${composeFile}" down -v`,
+        { stdio: "inherit", timeout: 120000 },
+      );
+    } catch {
+      // Try force-removing the container
+      try {
+        execSync(`docker rm -f "${name}"`, { stdio: "ignore" });
+      } catch {
+        // Container may not exist
+      }
+    }
+  }
+
+  // Remove pod directory
+  rmSync(podDir, { recursive: true, force: true });
+}
+
+/**
+ * Execute a command inside a pod container (non-interactive).
+ * Returns { exitCode, stdout, stderr }.
+ */
+export function execInPod(
+  name: string,
+  command: string[],
+  opts: { dir?: string } = {},
+): { exitCode: number; stdout: string; stderr: string } {
+  const podDir = join(config.podsDir, name);
+  if (!existsSync(podDir)) {
+    throw new Error(`Pod '${name}' not found`);
+  }
+
+  const workdir = opts.dir || "/workspace";
+  const args = ["exec", "-w", workdir, name, ...command];
+
+  try {
+    const stdout = execSync(`docker ${args.map((a) => `"${a}"`).join(" ")}`, {
+      encoding: "utf-8",
+      timeout: 300000,
+    });
+    return { exitCode: 0, stdout, stderr: "" };
+  } catch (err: any) {
+    return {
+      exitCode: err.status ?? 1,
+      stdout: err.stdout ?? "",
+      stderr: err.stderr ?? "",
+    };
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

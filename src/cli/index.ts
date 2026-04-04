@@ -2,7 +2,14 @@
 
 import { Command } from "commander";
 import { serverCommand } from "./commands/server.js";
-import { listCommand, statusCommand, infoCommand } from "./commands/pods.js";
+import {
+  listCommand,
+  statusCommand,
+  infoCommand,
+  downCommand,
+  removeCommand,
+} from "./commands/pods.js";
+import { execCommand, enterCommand } from "./commands/exec.js";
 import { apiGet } from "./client.js";
 import { ensureServer } from "./daemon.js";
 import { success, error as errorOut } from "./output.js";
@@ -29,9 +36,13 @@ program
     success(`Server is healthy (PID ${data.pid})`);
   });
 
-// Pod read-only commands
+// Pod commands
 program.addCommand(listCommand);
 program.addCommand(statusCommand);
 program.addCommand(infoCommand);
+program.addCommand(downCommand);
+program.addCommand(removeCommand);
+program.addCommand(execCommand);
+program.addCommand(enterCommand);
 
 program.parse();

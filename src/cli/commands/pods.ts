@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { apiGet } from "../client.js";
+import { apiGet, apiPost, apiDelete } from "../client.js";
 import { ensureServer } from "../daemon.js";
 import {
   info,
@@ -170,4 +170,43 @@ export const infoCommand = new Command("info")
       formatTable(headers, rows, [4, 16, 14, 20]);
     }
     console.log();
+  });
+
+export const downCommand = new Command("down")
+  .description("Stop a pod container (preserves data)")
+  .argument("<name>", "Pod name")
+  .action(async (name: string) => {
+    if (!(await ensureServer())) {
+      errorOut("Could not connect to server");
+      process.exit(1);
+    }
+
+    try {
+      await apiPost(`/api/pods/${encodeURIComponent(name)}/down`);
+      success(`Container stopped. Use 'isopod up ${name}' to restart.`);
+    } catch (err: any) {
+      errorOut(err.message);
+      process.exit(1);
+    }
+  });
+
+export const removeCommand = new Command("remove")
+  .alias("rm")
+  .description("Remove a pod and its container")
+  .argument("<name>", "Pod name")
+  .option("--force", "Skip confirmation")
+  .action(async (name: string, opts: { force?: boolean }) => {
+    if (!(await ensureServer())) {
+      errorOut("Could not connect to server");
+      process.exit(1);
+    }
+
+    try {
+      const query = opts.force ? "?force=true" : "";
+      await apiDelete(`/api/pods/${encodeURIComponent(name)}${query}`);
+      success(`Pod '${name}' removed.`);
+    } catch (err: any) {
+      errorOut(err.message);
+      process.exit(1);
+    }
   });
