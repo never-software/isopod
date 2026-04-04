@@ -20,3 +20,8 @@ indexer/.indexer-disabled-targets.json
 
 # Dashboard UI
 ui/node_modules/
+
+# TypeScript build
+node_modules/
+dist/
+.isopod/

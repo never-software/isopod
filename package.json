@@ -1,0 +1,25 @@
+{
+  "name": "isopod",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["indexer", "ui"],
+  "bin": {
+    "isopod-ts": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "start:server": "node dist/server/index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.1",
+    "commander": "^13.1.0",
+    "hono": "^4.7.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}
