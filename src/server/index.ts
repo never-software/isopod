@@ -6,6 +6,7 @@ import { serve } from "@hono/node-server";
 import { config } from "../config.js";
 import { podRoutes, repoRoutes } from "./routes/pods.js";
 import { systemRoutes } from "./routes/system.js";
+import { dbRoutes } from "./routes/db.js";
 
 export const app = new Hono();
 
@@ -21,6 +22,7 @@ app.get("/health", (c) => {
 app.route("/api/pods", podRoutes);
 app.route("/api/repos", repoRoutes);
 app.route("/api/system", systemRoutes);
+app.route("/api/db", dbRoutes);
 
 // Static file serving for SolidJS dashboard
 const MIME_TYPES: Record<string, string> = {

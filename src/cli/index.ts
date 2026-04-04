@@ -10,6 +10,7 @@ import {
   removeCommand,
 } from "./commands/pods.js";
 import { execCommand, enterCommand } from "./commands/exec.js";
+import { dbCommand } from "./commands/db.js";
 import { apiGet } from "./client.js";
 import { ensureServer } from "./daemon.js";
 import { success, error as errorOut } from "./output.js";
@@ -44,5 +45,8 @@ program.addCommand(downCommand);
 program.addCommand(removeCommand);
 program.addCommand(execCommand);
 program.addCommand(enterCommand);
+
+// Database commands
+program.addCommand(dbCommand);
 
 program.parse();
