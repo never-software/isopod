@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { getLayerInfos } from "../../core/layers.js";
+import { nuke, freshDbSeed } from "../../core/system.js";
+import { streamOperationEvents } from "../sse.js";
 import { config } from "../../config.js";
 import { execSync } from "child_process";
-import { existsSync } from "fs";
 
 export const systemRoutes = new Hono();
 
@@ -34,4 +35,14 @@ systemRoutes.get("/info", (c) => {
   }
 
   return c.json({ layers, image: imageInfo });
+});
+
+// POST /api/system/nuke — nuke all Docker resources (SSE)
+systemRoutes.post("/nuke", (c) => {
+  return streamOperationEvents(c, nuke());
+});
+
+// POST /api/fresh-db-seed — build + seed (SSE)
+systemRoutes.post("/fresh-db-seed", (c) => {
+  return streamOperationEvents(c, freshDbSeed());
 });

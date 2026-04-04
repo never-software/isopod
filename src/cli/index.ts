@@ -13,6 +13,8 @@ import {
 } from "./commands/pods.js";
 import { execCommand, enterCommand } from "./commands/exec.js";
 import { dbCommand } from "./commands/db.js";
+import { cacheCommand } from "./commands/cache.js";
+import { buildCommand, nukeCommand, freshDbSeedCommand } from "./commands/system.js";
 import { apiGet } from "./client.js";
 import { ensureServer } from "./daemon.js";
 import { success, error as errorOut } from "./output.js";
@@ -52,5 +54,13 @@ program.addCommand(enterCommand);
 
 // Database commands
 program.addCommand(dbCommand);
+
+// Cache commands
+program.addCommand(cacheCommand);
+
+// System commands
+program.addCommand(buildCommand);
+program.addCommand(nukeCommand);
+program.addCommand(freshDbSeedCommand);
 
 program.parse();
