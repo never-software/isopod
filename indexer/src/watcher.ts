@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, unlinkSync, existsSync, statSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, statSync } from "fs";
 import { resolve, join } from "path";
 import { spawn, execSync } from "child_process";
 import { config } from "./config.js";
@@ -43,6 +43,8 @@ export async function startDaemon(): Promise<void> {
     console.log("Indexer daemon is already running.");
     return;
   }
+
+  mkdirSync(config.tmpDir, { recursive: true });
 
   const scriptPath = resolve(config.indexerRoot, "dist", "cli.js");
   const child = spawn("node", [scriptPath, "watch"], {

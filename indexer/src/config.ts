@@ -43,9 +43,11 @@ export const config = {
   get podsDir() { return resolve(this.isopodRoot, "pods"); },
 
   indexerRoot,
-  pidFile: resolve(indexerRoot, ".indexer.pid"),
-  logFile: resolve(indexerRoot, ".indexer.log"),
+  tmpDir: resolve(indexerRoot, "..", "tmp"),
+  get pidFile() { return resolve(this.tmpDir, "indexer.pid"); },
+  get logFile() { return resolve(this.tmpDir, "indexer.log"); },
   disabledTargetsFile: resolve(indexerRoot, ".indexer-disabled-targets.json"),
+  get settingsFile() { return resolve(this.tmpDir, "indexer-settings.json"); },
 
   // Chunking
   maxChunkTokens: 500,
