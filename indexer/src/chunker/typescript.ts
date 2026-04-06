@@ -5,10 +5,10 @@ import { Chunk, estimateTokens, buildEmbeddingText } from "./index.js";
 const { typescript: TSLanguage, tsx: TSXLanguage } = TypeScriptLanguage;
 
 const tsParser = new Parser();
-tsParser.setLanguage(TSLanguage);
+tsParser.setLanguage(TSLanguage as any);
 
 const tsxParser = new Parser();
-tsxParser.setLanguage(TSXLanguage);
+tsxParser.setLanguage(TSXLanguage as any);
 
 export function chunkTypeScript(source: string, filePath: string, repo: string): Chunk[] {
   const isTsx = filePath.endsWith(".tsx") || filePath.endsWith(".jsx");

@@ -3,7 +3,7 @@ import Ruby from "tree-sitter-ruby";
 import { Chunk, estimateTokens, buildEmbeddingText } from "./index.js";
 
 const parser = new Parser();
-parser.setLanguage(Ruby);
+parser.setLanguage(Ruby as any);
 
 // Rails DSL methods that define schema/associations (grouped into a "schema" chunk)
 const RAILS_SCHEMA_METHODS = new Set([
