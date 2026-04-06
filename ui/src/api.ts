@@ -55,6 +55,11 @@ export const toggleWatchTarget = (collectionName: string, branch: string) => pos
 export const toggleWatchPod = (podName: string, enabled: boolean) => post<{ podName: string; enabled: boolean }>("/watch-targets/toggle-pod", { podName, enabled });
 
 
+// ── Settings ───────────────────────────────────────────────────────
+
+export const fetchSettings = () => get<{ autoStart: boolean }>("/settings");
+export const updateSettings = (settings: { autoStart?: boolean }) => post<{ autoStart: boolean }>("/settings", settings);
+
 // ── Database ────────────────────────────────────────────────────────
 
 export const fetchSnapshots = () => get<Snapshot[]>("/snapshots");

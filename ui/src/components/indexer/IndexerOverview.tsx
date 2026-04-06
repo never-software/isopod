@@ -1,5 +1,5 @@
 import { createResource, For, Show, createSignal, onCleanup } from "solid-js";
-import { fetchCollections, fetchBranches, fetchDaemon, fetchLogs, fetchWatchTargets, daemonStart, daemonStop, deleteCollectionApi, deleteBranchApi, deleteAllCollections, toggleWatchTarget, toggleWatchPod } from "../../api";
+import { fetchCollections, fetchBranches, fetchDaemon, fetchLogs, fetchWatchTargets, daemonStart, daemonStop, deleteCollectionApi, deleteBranchApi, deleteAllCollections, toggleWatchTarget, toggleWatchPod, fetchSettings, updateSettings } from "../../api";
 import type { Collection, BranchInfo, WatchTarget } from "../../types";
 import { ActivityLog } from "./ActivityLog";
 
@@ -8,6 +8,7 @@ export function IndexerOverview() {
   const [branches, { refetch: refetchBranches }] = createResource(fetchBranches, { initialValue: [] });
   const [daemon, { refetch: refetchDaemon }] = createResource(fetchDaemon, { initialValue: { running: false, pid: null } });
   const [watchTargets, { refetch: refetchTargets }] = createResource(fetchWatchTargets, { initialValue: [] });
+  const [settings, { refetch: refetchSettings }] = createResource(fetchSettings, { initialValue: { autoStart: false } });
   const [tab, setTab] = createSignal<"collections" | "activity" | "targets">("collections");
   const [daemonLoading, setDaemonLoading] = createSignal(false);
 
@@ -24,6 +25,12 @@ export function IndexerOverview() {
   const totalPoints = () => collections()!.reduce((sum, c) => sum + c.points, 0);
   const sortedCollections = () =>
     [...collections()!].sort((a, b) => a.name.localeCompare(b.name));
+
+  async function toggleAutoStart() {
+    const current = settings()?.autoStart ?? false;
+    await updateSettings({ autoStart: !current });
+    refetchSettings();
+  }
 
   async function toggleDaemon() {
     setDaemonLoading(true);
@@ -55,10 +62,12 @@ export function IndexerOverview() {
           pid={daemon()?.pid ?? null}
           loading={daemonLoading()}
           onToggle={toggleDaemon}
+          autoStart={settings()?.autoStart ?? false}
+          onToggleAutoStart={toggleAutoStart}
         />
         <StatCard label="Collections" value={String(collections()!.length)} accent="cyan" />
         <StatCard label="Total Chunks" value={totalPoints().toLocaleString()} accent="cyan" />
-        <StatCard label="Watch Targets" value={String(watchTargets()!.length)} accent="cyan" />
+        <StatCard label="Watch Targets" value={`${watchTargets()!.filter(t => t.enabled).length} / ${watchTargets()!.length}`} accent="cyan" />
       </div>
 
       {/* Tab navigation */}
@@ -91,7 +100,7 @@ export function IndexerOverview() {
   );
 }
 
-function DaemonCard(props: { running: boolean; pid: number | null; loading: boolean; onToggle: () => void }) {
+function DaemonCard(props: { running: boolean; pid: number | null; loading: boolean; onToggle: () => void; autoStart: boolean; onToggleAutoStart: () => void }) {
   return (
     <div class="border border-zinc-800 rounded-lg bg-zinc-900/50 p-3">
       <div class="flex items-center justify-between mb-1">
@@ -114,6 +123,10 @@ function DaemonCard(props: { running: boolean; pid: number | null; loading: bool
       <Show when={props.pid}>
         <div class="text-xs text-zinc-600 font-mono mt-0.5">PID {props.pid}</div>
       </Show>
+      <div class="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800">
+        <span class="text-xs text-zinc-500">Start on boot</span>
+        <Toggle enabled={props.autoStart} onToggle={props.onToggleAutoStart} />
+      </div>
     </div>
   );
 }
@@ -267,7 +280,7 @@ function BranchesSection(props: { branches: BranchInfo[]; onRefresh: () => void 
                         {b.points.toLocaleString()}
                       </td>
                       <td class="px-4 py-2.5 text-right font-mono text-zinc-500">
-                        {b.tombstones > 0 ? b.tombstones : "—"}
+                        {b.tombstones > 0 ? b.tombstones : "\u2014"}
                       </td>
                       <td class="px-4 py-2.5 text-right">
                         <button
@@ -289,6 +302,7 @@ function BranchesSection(props: { branches: BranchInfo[]; onRefresh: () => void 
     </Show>
   );
 }
+
 
 function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void }) {
   const baseTargets = () => props.targets.filter((t) => !t.podName);

@@ -1,5 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { readFileSync, existsSync, statSync, openSync, readSync, closeSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from "fs";
 import { resolve, join, extname } from "path";
 import { execSync, execFile, spawn } from "child_process";
 import { config } from "./config.js";
@@ -62,6 +62,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/watch-targets/disabled") return apiDisabledTargets(res);
     if (path === "/api/snapshots") return apiSnapshots(res);
     if (path === "/api/repos") return apiRepos(res);
+    if (path === "/api/settings") return apiGetSettings(res);
 
     const branchesMatch = path.match(/^\/api\/collection\/(.+)\/branches$/);
     if (branchesMatch) return apiCollectionBranches(res, decodeURIComponent(branchesMatch[1]));
@@ -89,6 +90,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/watch-targets/toggle") return apiToggleTarget(res, body);
     if (path === "/api/watch-targets/toggle-pod") return apiTogglePod(res, body);
     if (path === "/api/collections/delete-all") return apiDeleteAllCollections(res);
+    if (path === "/api/settings") return apiUpdateSettings(res, body);
 
     const deleteColMatch = path.match(/^\/api\/collection\/(.+)\/delete$/);
     if (deleteColMatch) return apiDeleteCollection(res, decodeURIComponent(deleteColMatch[1]));
@@ -197,6 +199,29 @@ function apiDaemonStop(res: ServerResponse): void {
   } catch (error: any) {
     json(res, 500, { error: error.message });
   }
+}
+
+const DEFAULT_SETTINGS = { autoStart: false };
+
+function getSettings(): Record<string, any> {
+  try {
+    if (existsSync(config.settingsFile)) {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(readFileSync(config.settingsFile, "utf-8")) };
+    }
+  } catch { /* corrupt file — use defaults */ }
+  return { ...DEFAULT_SETTINGS };
+}
+
+function apiGetSettings(res: ServerResponse): void {
+  json(res, 200, getSettings());
+}
+
+function apiUpdateSettings(res: ServerResponse, body: any): void {
+  const current = getSettings();
+  const updated = { ...current, ...body };
+  mkdirSync(config.tmpDir, { recursive: true });
+  writeFileSync(config.settingsFile, JSON.stringify(updated, null, 2));
+  json(res, 200, updated);
 }
 
 async function apiDeleteCollection(res: ServerResponse, name: string): Promise<void> {
