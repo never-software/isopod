@@ -11,6 +11,7 @@ const NAV_ITEMS: { view: View; label: string; icon: string }[] = [
   { view: "pods", label: "Pods", icon: "cube" },
   { view: "indexer", label: "Indexer", icon: "chart" },
   { view: "database", label: "Database", icon: "database" },
+  { view: "cache", label: "Cache", icon: "layers" },
 ];
 
 const ICONS: Record<string, () => any> = {
@@ -27,6 +28,11 @@ const ICONS: Record<string, () => any> = {
   search: () => (
     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+    </svg>
+  ),
+  layers: () => (
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" />
     </svg>
   ),
   database: () => (

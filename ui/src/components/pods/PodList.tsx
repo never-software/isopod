@@ -1,27 +1,89 @@
-import { createResource, For, Show, createSignal } from "solid-js";
-import { fetchPods, podUp, podDown } from "../../api";
-import type { Pod } from "../../types";
+import { For, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
+import { fetchPods, podUp, podDown, podWarnings, podRemove } from "../../api";
+import type { Pod, RemoveWarning } from "../../types";
 import { CreatePodWizard } from "./CreatePodWizard";
 
+interface LogEntry {
+  time: string;
+  message: string;
+  error?: boolean;
+}
+
 export function PodList() {
-  const [pods, { refetch }] = createResource(fetchPods, { initialValue: [] });
+  const [pods, setPods] = createStore<Pod[]>([]);
+  const [loading, setLoading] = createSignal(true);
   const [actionPod, setActionPod] = createSignal<string | null>(null);
+  const [statusMessage, setStatusMessage] = createSignal<string | null>(null);
+  const [errorInfo, setErrorInfo] = createSignal<{ pod: string; message: string } | null>(null);
+  const [logs, setLogs] = createSignal<LogEntry[]>([]);
   const [showWizard, setShowWizard] = createSignal(false);
+
+  async function refreshPods() {
+    try {
+      const data = await fetchPods();
+      setPods(reconcile(data, { key: "name" }));
+    } catch {}
+    setLoading(false);
+  }
+
+  refreshPods();
+  const poll = setInterval(refreshPods, 3000);
+  onCleanup(() => clearInterval(poll));
+
+  function appendLog(message: string, error = false) {
+    const time = new Date().toLocaleTimeString("en-GB", { hour12: false });
+    setLogs((prev) => [...prev, { time, message, error }]);
+  }
 
   async function handleAction(pod: Pod, action: "up" | "down") {
     setActionPod(pod.name);
+    setErrorInfo(null);
+    setLogs([]);
+    setStatusMessage(action === "up" ? "Starting..." : "Stopping...");
+    appendLog(`${action === "up" ? "Starting" : "Stopping"} pod: ${pod.name}`);
     try {
+      const onProgress = (msg: string) => {
+        setStatusMessage(msg);
+        appendLog(msg);
+      };
       if (action === "up") {
-        await podUp(pod.name);
+        await podUp(pod.name, onProgress);
       } else {
-        await podDown(pod.name);
+        await podDown(pod.name, onProgress);
       }
-      // Refresh after a delay to let container state settle
-      setTimeout(() => refetch(), 2000);
+      appendLog("Done");
+      refreshPods();
     } catch (e: any) {
-      console.error(e);
+      appendLog(e.message, true);
+      setErrorInfo({ pod: pod.name, message: e.message });
+      setTimeout(() => setErrorInfo(null), 5000);
     } finally {
       setActionPod(null);
+      setStatusMessage(null);
+    }
+  }
+
+  async function handleDelete(pod: Pod) {
+    setActionPod(pod.name);
+    setErrorInfo(null);
+    setLogs([]);
+    setStatusMessage("Removing...");
+    appendLog(`Removing pod: ${pod.name}`);
+    try {
+      await podRemove(pod.name, (msg) => {
+        setStatusMessage(msg);
+        appendLog(msg);
+      });
+      appendLog("Done");
+      refreshPods();
+    } catch (e: any) {
+      appendLog(e.message, true);
+      setErrorInfo({ pod: pod.name, message: e.message });
+      setTimeout(() => setErrorInfo(null), 5000);
+    } finally {
+      setActionPod(null);
+      setStatusMessage(null);
     }
   }
 
@@ -32,7 +94,7 @@ export function PodList() {
         <div class="flex items-center gap-3">
           <button
             class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-            onClick={() => refetch()}
+            onClick={refreshPods}
           >
             Refresh
           </button>
@@ -48,69 +110,145 @@ export function PodList() {
       <Show when={showWizard()}>
         <CreatePodWizard
           onClose={() => setShowWizard(false)}
-          onCreated={() => refetch()}
+          onCreated={refreshPods}
         />
       </Show>
 
-      <Show when={!pods.loading} fallback={<LoadingState />}>
+      <Show when={!loading()} fallback={<LoadingState />}>
         <Show
-          when={pods()!.length > 0}
+          when={pods.length > 0}
           fallback={<EmptyState />}
         >
           <div class="space-y-3">
-            <For each={pods()}>
+            <For each={pods}>
               {(pod) => (
                 <PodCard
                   pod={pod}
                   loading={actionPod() === pod.name}
+                  statusMessage={actionPod() === pod.name ? statusMessage() : null}
+                  error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
                   onUp={() => handleAction(pod, "up")}
                   onDown={() => handleAction(pod, "down")}
+                  onDelete={() => handleDelete(pod)}
                 />
               )}
             </For>
           </div>
         </Show>
       </Show>
+
+      <ActivityLog entries={logs()} onClear={() => setLogs([])} />
     </div>
+  );
+}
+
+function ActivityLog(props: { entries: LogEntry[]; onClear: () => void }) {
+  let logEnd: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    if (props.entries.length > 0) {
+      logEnd?.scrollIntoView({ behavior: "smooth" });
+    }
+  });
+
+  return (
+    <Show when={props.entries.length > 0}>
+      <div class="mt-6">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs font-medium text-zinc-500 uppercase tracking-wider">Activity Log</h3>
+          <button
+            class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            onClick={props.onClear}
+          >
+            Clear
+          </button>
+        </div>
+        <div class="border border-zinc-800 rounded-lg bg-zinc-950 p-3 max-h-48 overflow-y-auto font-mono text-xs leading-5">
+          <For each={props.entries}>
+            {(entry) => (
+              <div class={entry.error ? "text-red-400" : "text-zinc-400"}>
+                <span class="text-zinc-600 select-none">{entry.time}</span>{" "}
+                {entry.message}
+              </div>
+            )}
+          </For>
+          <div ref={logEnd} />
+        </div>
+      </div>
+    </Show>
   );
 }
 
 function PodCard(props: {
   pod: Pod;
   loading: boolean;
+  statusMessage: string | null;
+  error: string | null;
   onUp: () => void;
   onDown: () => void;
+  onDelete: () => void;
 }) {
   const isRunning = () => props.pod.container.state === "running";
+  const [confirmDelete, setConfirmDelete] = createSignal(false);
+  const [warnings, setWarnings] = createSignal<RemoveWarning[]>([]);
+  const [loadingWarnings, setLoadingWarnings] = createSignal(false);
+
+  async function handleDeleteClick() {
+    setLoadingWarnings(true);
+    try {
+      const w = await podWarnings(props.pod.name);
+      setWarnings(w);
+    } catch { setWarnings([]); }
+    setLoadingWarnings(false);
+    setConfirmDelete(true);
+  }
 
   return (
-    <div class="border border-zinc-800 rounded-lg bg-zinc-900/50 p-4">
+    <div class={`border rounded-lg bg-zinc-900/50 p-4 ${props.error ? "border-red-900/50" : "border-zinc-800"}`}>
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-3">
-          <span
-            class={`w-2.5 h-2.5 rounded-full ${
-              isRunning() ? "bg-emerald-500" : "bg-zinc-600"
-            }`}
-          />
+          <Show
+            when={!props.loading}
+            fallback={
+              <span class="w-2.5 h-2.5 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+            }
+          >
+            <span
+              class={`w-2.5 h-2.5 rounded-full ${
+                props.error ? "bg-red-500" : isRunning() ? "bg-emerald-500" : "bg-zinc-600"
+              }`}
+            />
+          </Show>
           <h3 class="font-medium">{props.pod.name}</h3>
         </div>
 
         <div class="flex items-center gap-2">
-          <span class="text-xs text-zinc-500">
-            {props.pod.container.status || props.pod.container.state}
+          <span class={`text-xs ${props.error ? "text-red-400" : "text-zinc-500"}`}>
+            {props.error
+              ? props.error
+              : props.loading && props.statusMessage
+                ? props.statusMessage
+                : (props.pod.container.status || props.pod.container.state)}
           </span>
-          <Show when={!props.loading} fallback={
-            <span class="text-xs text-zinc-500 animate-pulse">working...</span>
-          }>
+          <Show when={!props.loading && !props.error}>
             <Show
               when={isRunning()}
               fallback={
-                <button
-                  class="px-2.5 py-1 text-xs rounded bg-emerald-900/50 text-emerald-400 hover:bg-emerald-900 transition-colors"
-                  onClick={props.onUp}
-                >
-                  Start
-                </button>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    class="px-2.5 py-1 text-xs rounded bg-emerald-900/50 text-emerald-400 hover:bg-emerald-900 transition-colors"
+                    onClick={props.onUp}
+                  >
+                    Start
+                  </button>
+                  <button
+                    class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-red-400/70 hover:bg-red-900/30 hover:text-red-400 transition-colors"
+                    onClick={handleDeleteClick}
+                    disabled={loadingWarnings()}
+                  >
+                    Delete
+                  </button>
+                </div>
               }
             >
               <button
@@ -135,6 +273,40 @@ function PodCard(props: {
               </div>
             )}
           </For>
+        </div>
+      </Show>
+
+      <Show when={confirmDelete()}>
+        <div class="mt-3 border border-red-900/50 rounded-lg bg-red-950/30 p-3">
+          <Show when={warnings().length > 0}>
+            <p class="text-xs text-red-400 font-medium mb-2">Unsaved work that will be permanently lost:</p>
+            <div class="space-y-1 mb-3">
+              <For each={warnings()}>
+                {(w) => (
+                  <div class="text-xs text-red-300/80">
+                    <span class="text-zinc-400">{w.repo}</span> — {w.message}
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Show when={warnings().length === 0}>
+            <p class="text-xs text-zinc-400 mb-3">No unsaved work detected. Safe to remove.</p>
+          </Show>
+          <div class="flex items-center gap-2">
+            <button
+              class="px-2.5 py-1 text-xs rounded bg-red-900/50 text-red-400 hover:bg-red-900 transition-colors"
+              onClick={() => { setConfirmDelete(false); props.onDelete(); }}
+            >
+              Remove pod
+            </button>
+            <button
+              class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"
+              onClick={() => setConfirmDelete(false)}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </Show>
     </div>

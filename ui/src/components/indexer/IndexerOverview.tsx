@@ -87,7 +87,7 @@ export function IndexerOverview() {
       <div class="flex-1 min-h-0 flex flex-col overflow-auto">
         <Show when={tab() === "collections"}>
           <CollectionTable collections={sortedCollections()} onRefresh={refetchCollections} />
-          <BranchesSection branches={branches()!} onRefresh={() => { refetchBranches(); refetchCollections(); }} />
+          <BranchesSection branches={branches()!} loading={branches.loading} onRefresh={() => { refetchBranches(); refetchCollections(); }} />
         </Show>
         <Show when={tab() === "activity"}>
           <ActivityLog />
@@ -233,7 +233,7 @@ function CollectionTable(props: { collections: Collection[]; onRefresh: () => vo
   );
 }
 
-function BranchesSection(props: { branches: BranchInfo[]; onRefresh: () => void }) {
+function BranchesSection(props: { branches: BranchInfo[]; loading: boolean; onRefresh: () => void }) {
   const podBranches = () => props.branches.filter((b) => b.branch !== "base");
   const [deleting, setDeleting] = createSignal<string | null>(null);
 
@@ -250,9 +250,13 @@ function BranchesSection(props: { branches: BranchInfo[]; onRefresh: () => void 
   }
 
   return (
+    <Show when={!props.loading || podBranches().length > 0} fallback={
+      <div class="mt-6">
+        <div class="text-xs text-zinc-500 animate-pulse">Loading branches...</div>
+      </div>
+    }>
     <Show when={podBranches().length > 0}>
       <div class="mt-6">
-        <h3 class="text-sm font-medium text-zinc-400 mb-2">Branches</h3>
         <div class="border border-zinc-800 rounded-lg overflow-hidden">
           <table class="w-full text-sm">
             <thead>
@@ -299,6 +303,7 @@ function BranchesSection(props: { branches: BranchInfo[]; onRefresh: () => void 
           </table>
         </div>
       </div>
+    </Show>
     </Show>
   );
 }

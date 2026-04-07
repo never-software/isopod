@@ -63,6 +63,33 @@ export interface Snapshot {
   created: string;
 }
 
+// ── Cache types ─────────────────────────────────────────────────────
+
+export interface LayerInfo {
+  name: string;
+  version: string;
+  status: "fresh" | "stale" | "not built";
+  storedVersion?: string;
+  content: string[];
+}
+
+export interface CacheInfo {
+  layers: LayerInfo[];
+  image: {
+    exists: boolean;
+    name: string;
+    sizeMB?: number;
+    created?: string;
+  };
+}
+
+// ── Remove warnings ─────────────────────────────────────────────────
+
+export interface RemoveWarning {
+  repo: string;
+  message: string;
+}
+
 // ── Navigation ──────────────────────────────────────────────────────
 
-export type View = "pods" | "indexer" | "database";
+export type View = "pods" | "indexer" | "database" | "cache";

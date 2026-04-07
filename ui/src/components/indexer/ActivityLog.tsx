@@ -1,5 +1,5 @@
-import { createResource, createSignal, For, Show, onCleanup } from "solid-js";
-import { fetchLogs } from "../../api";
+import { createResource, createSignal, createEffect, For, Show, onCleanup, onMount } from "solid-js";
+import { fetchLogs, clearLogs } from "../../api";
 
 export function ActivityLog() {
   const [filter, setFilter] = createSignal("");
@@ -9,25 +9,60 @@ export function ActivityLog() {
   const interval = setInterval(() => refetch(), 5000);
   onCleanup(() => clearInterval(interval));
 
+  let scrollRef!: HTMLDivElement;
+  const [latched, setLatched] = createSignal(true);
+
   const filteredLines = () => {
     const f = filter().toLowerCase();
     if (!f) return logs()!.lines;
     return logs()!.lines.filter((line) => line.toLowerCase().includes(f));
   };
 
+  function isAtBottom(el: HTMLElement): boolean {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+  }
+
+  function scrollToBottom() {
+    scrollRef.scrollTop = scrollRef.scrollHeight;
+  }
+
+  onMount(() => scrollToBottom());
+
+  createEffect(() => {
+    filteredLines();
+    if (latched()) {
+      queueMicrotask(scrollToBottom);
+    }
+  });
+
+  async function handleClear() {
+    await clearLogs();
+    refetch();
+  }
+
   return (
     <div class="flex flex-col flex-1 min-h-0">
-      <div class="mb-3">
+      <div class="flex gap-2 mb-3">
         <input
           type="text"
           placeholder="Filter log lines..."
-          class="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
+          class="flex-1 bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
           value={filter()}
           onInput={(e) => setFilter(e.currentTarget.value)}
         />
+        <button
+          class="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300 transition-colors"
+          onClick={handleClear}
+        >
+          Clear Logs
+        </button>
       </div>
 
-      <div class="border border-zinc-800 rounded-lg bg-zinc-950 p-3 flex-1 min-h-0 overflow-auto font-mono text-xs">
+      <div
+        ref={scrollRef}
+        class="border border-zinc-800 rounded-lg bg-zinc-950 p-3 flex-1 min-h-0 overflow-auto font-mono text-xs"
+        onScroll={(e) => setLatched(isAtBottom(e.currentTarget))}
+      >
         <Show
           when={filteredLines().length > 0}
           fallback={<div class="text-zinc-600">No log entries.</div>}

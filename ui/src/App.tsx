@@ -4,8 +4,9 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { PodList } from "./components/pods/PodList";
 import { IndexerOverview } from "./components/indexer/IndexerOverview";
 import { SnapshotList } from "./components/db/SnapshotList";
+import { CacheOverview } from "./components/cache/CacheOverview";
 
-const VIEWS: View[] = ["pods", "indexer", "database"];
+const VIEWS: View[] = ["pods", "indexer", "database", "cache"];
 
 function getInitialView(): View {
   const hash = location.hash.slice(1);
@@ -23,7 +24,7 @@ export default function App() {
   return (
     <div class="flex h-screen bg-zinc-950 text-zinc-100">
       <Sidebar current={view()} onNavigate={navigate} />
-      <main class="flex-1 flex flex-col overflow-hidden p-6">
+      <main class="flex-1 flex flex-col overflow-y-auto p-6">
         <Switch>
           <Match when={view() === "pods"}>
             <PodList />
@@ -33,6 +34,9 @@ export default function App() {
           </Match>
 <Match when={view() === "database"}>
             <SnapshotList />
+          </Match>
+          <Match when={view() === "cache"}>
+            <CacheOverview />
           </Match>
         </Switch>
       </main>
