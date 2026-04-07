@@ -1,0 +1,23 @@
+# Amp provider configuration — referenced by amp_v3 flow step 1.
+# Stored as a Windmill variable (JSON string at runtime).
+#
+# Each key is a provider name; the flow resolves which provider/model to use
+# based on the incoming request and returns the config to step 2.
+
+value: |
+  {
+    "anthropic": {
+      "provider": "anthropic",
+      "api_base": null,
+      "api_key_variable": "f/ai/anthropic_api_key",
+      "default_model": "claude-sonnet-4-20250514",
+      "models": {
+        "claude-sonnet-4-20250514": {},
+        "claude-opus-4-20250514": {},
+        "claude-haiku-4-20250514": {}
+      }
+    }
+  }
+
+is_secret: false
+description: "Provider configuration for amp_v3 — maps provider names to API base, key variable, and supported models."

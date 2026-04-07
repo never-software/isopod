@@ -1,0 +1,23 @@
+# Raw-stream HTTP trigger for amp_v3 flow.
+#
+# This trigger exposes the amp_v3 flow as an HTTP endpoint that supports
+# SSE streaming. When a client sends a request with stream=true, chunks
+# are streamed back in real time via the raw_stream mechanism.
+#
+# Route: POST /api/v3/chat/completions
+#
+# The raw_stream trigger passes WM_STREAM_FD to the flow's subprocess
+# environment, enabling wm_stream.write() from within flow steps.
+
+path: /api/v3/chat/completions
+http_method: POST
+script_path: f/ai/amp_v3
+is_flow: true
+is_raw_stream: true
+
+# Request body is forwarded as flow_input — the schema is defined in flow.yaml.
+# The trigger sets WM_STREAM_FD in the environment for streaming responses.
+#
+# For non-streaming requests, the flow returns a JSON response normally.
+# For streaming requests, data is written to the SSE stream via wm_stream
+# and the flow return value is ignored.

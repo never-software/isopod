@@ -1,0 +1,15 @@
+# Metadata for the raw_stream E2E test script.
+
+summary: "E2E test — raw_stream SSE output"
+description: |
+  Streams 5 SSE chunks via wm_stream.write() with 100ms delays,
+  then sends a final chunk with finish_reason=stop and [DONE].
+  Used to verify that raw_stream HTTP triggers deliver chunks in real time.
+
+language: python3
+is_template: false
+
+schema:
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: object
+  properties: {}

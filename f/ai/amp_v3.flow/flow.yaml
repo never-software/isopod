@@ -1,0 +1,99 @@
+# Amp v3 flow — 2-step Windmill flow for LLM completions.
+#
+# Step 1 (Ruby): Resolve provider config from amp_providers variable
+# Step 2 (Python): Call litellm.completion(), optionally streaming via wm_stream
+#
+# Supports both streaming (stream=true → SSE via raw_stream) and
+# non-streaming (stream=false → JSON response) modes.
+
+summary: "Amp v3 — LLM completion with optional streaming"
+description: |
+  Resolves provider configuration and calls the LLM via litellm.
+  When stream=true, emits SSE chunks in OpenAI chat.completions.chunk format
+  via wm_stream for use with raw_stream HTTP triggers.
+
+value:
+  modules:
+    - id: resolve_provider_config
+      summary: "Resolve provider, model, and API key"
+      value:
+        type: rawscript
+        language: ruby
+        content: !inline resolve_provider_config.inline_script.rb
+        input_transforms:
+          model:
+            type: javascript
+            expr: "flow_input.model"
+          stream:
+            type: javascript
+            expr: "flow_input.stream ?? false"
+          messages:
+            type: javascript
+            expr: "flow_input.messages"
+          temperature:
+            type: javascript
+            expr: "flow_input.temperature"
+          max_tokens:
+            type: javascript
+            expr: "flow_input.max_tokens"
+          top_p:
+            type: javascript
+            expr: "flow_input.top_p"
+          stop:
+            type: javascript
+            expr: "flow_input.stop"
+          tools:
+            type: javascript
+            expr: "flow_input.tools"
+          tool_choice:
+            type: javascript
+            expr: "flow_input.tool_choice"
+
+    - id: call_provider_via_litellm
+      summary: "Call LLM via litellm (streaming or non-streaming)"
+      value:
+        type: rawscript
+        language: python3
+        content: !inline call_provider_via_litellm.inline_script.py
+        input_transforms:
+          provider_config:
+            type: javascript
+            expr: "results.resolve_provider_config"
+
+schema:
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: object
+  required:
+    - messages
+  properties:
+    model:
+      type: string
+      description: "Model identifier (e.g. claude-sonnet-4-20250514)"
+    stream:
+      type: boolean
+      default: false
+      description: "If true, stream SSE chunks via raw_stream"
+    messages:
+      type: array
+      description: "OpenAI-format messages array"
+      items:
+        type: object
+    temperature:
+      type: number
+    max_tokens:
+      type: integer
+    top_p:
+      type: number
+    stop:
+      oneOf:
+        - type: string
+        - type: array
+          items:
+            type: string
+    tools:
+      type: array
+      description: "OpenAI-format tools array"
+      items:
+        type: object
+    tool_choice:
+      description: "Tool choice strategy"
