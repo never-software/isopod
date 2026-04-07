@@ -1,0 +1,17 @@
+# Windmill variable: f/ai/amp_providers
+# Provider configuration for amp v3.
+# The flow reads this variable at runtime via wmill.get_variable().
+
+is_secret: false
+description: "AI provider routing table for amp v3"
+value: |
+  providers:
+    anthropic:
+      litellm_provider: anthropic
+      api_key_variable: f/ai/anthropic_api_key
+      models:
+        - claude-sonnet-4-20250514
+        - claude-opus-4-20250514
+        - claude-haiku-4-5-20251001
+      default_model: claude-sonnet-4-20250514
+  default_provider: anthropic

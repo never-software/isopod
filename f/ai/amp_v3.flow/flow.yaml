@@ -1,0 +1,95 @@
+# Windmill Flow: f/ai/amp_v3
+#
+# Two-step AI completion flow:
+#   1. resolve_provider_config — reads amp_providers variable, resolves model/key
+#   2. call_provider_via_litellm — calls LiteLLM; streams SSE when stream=true
+#
+# Supports both streaming (via raw_stream HTTP trigger) and non-streaming usage.
+
+summary: "Amp v3 — AI completion with optional SSE streaming"
+description: |
+  OpenAI-compatible completion endpoint. Resolves provider config from the
+  amp_providers variable, then calls the provider via LiteLLM. When stream=true,
+  emits SSE chunks via wm_stream for real-time streaming behind a raw_stream
+  HTTP trigger.
+value:
+  modules:
+    - id: resolve_provider_config
+      value:
+        type: rawscript
+        language: ruby
+        content: !include resolve_provider_config.inline_script.rb
+        input_transforms:
+          model:
+            type: javascript
+            expr: flow_input.value.model
+      summary: "Resolve provider, model, and API key"
+
+    - id: call_provider_via_litellm
+      value:
+        type: rawscript
+        language: python3
+        content: !include call_provider_via_litellm.inline_script.py
+        input_transforms:
+          provider_config:
+            type: javascript
+            expr: results.resolve_provider_config
+          messages:
+            type: javascript
+            expr: flow_input.value.messages
+          stream:
+            type: javascript
+            expr: flow_input.value.stream ?? false
+          temperature:
+            type: javascript
+            expr: flow_input.value.temperature
+          max_tokens:
+            type: javascript
+            expr: flow_input.value.max_tokens
+          top_p:
+            type: javascript
+            expr: flow_input.value.top_p
+          stop:
+            type: javascript
+            expr: flow_input.value.stop
+          tools:
+            type: javascript
+            expr: flow_input.value.tools
+          tool_choice:
+            type: javascript
+            expr: flow_input.value.tool_choice
+      summary: "Call provider via LiteLLM (streaming or batch)"
+
+schema:
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: object
+  required:
+    - messages
+  properties:
+    model:
+      type: string
+      description: "Model identifier (e.g. claude-sonnet-4-20250514)"
+    messages:
+      type: array
+      description: "OpenAI-compatible messages array"
+      items:
+        type: object
+    stream:
+      type: boolean
+      default: false
+      description: "If true, stream SSE chunks via raw_stream"
+    temperature:
+      type: number
+    max_tokens:
+      type: integer
+    top_p:
+      type: number
+    stop:
+      description: "Stop sequence(s)"
+    tools:
+      type: array
+      description: "Tool definitions for function calling"
+      items:
+        type: object
+    tool_choice:
+      description: "Tool choice strategy"

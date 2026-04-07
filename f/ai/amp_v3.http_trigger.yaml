@@ -1,0 +1,14 @@
+# Windmill HTTP Trigger: raw_stream endpoint for amp v3
+#
+# This trigger exposes the amp_v3 flow as a raw_stream HTTP endpoint.
+# The raw_stream mode passes a pipe FD to the flow so wm_stream.write()
+# can send SSE chunks directly to the HTTP client.
+#
+# Endpoint: POST /api/w/<workspace>/jobs/run_wait_result/f/ai/amp_v3
+# With raw_stream, the response streams as text/event-stream.
+
+path: f/ai/amp_v3
+script_path: f/ai/amp_v3
+is_flow: true
+is_raw_stream: true
+http_method: POST
