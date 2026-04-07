@@ -10,13 +10,24 @@ pod_workspace_template/*
 .generated.Dockerfile
 *.pem
 
-# Indexer
+# API
+api/dist/
+api/node_modules/
+
+# CLI
+cli/dist/
+cli/node_modules/
+
+# Indexer (legacy)
 indexer/dist/
 indexer/node_modules/
 indexer/.env
-indexer/.indexer.pid
-indexer/.indexer.log
-indexer/.indexer-disabled-targets.json
+
+# State files
+.indexer.pid
+.indexer.log
+.indexer-disabled-targets.json
+.env
 
 # Dashboard UI
 ui/node_modules/
