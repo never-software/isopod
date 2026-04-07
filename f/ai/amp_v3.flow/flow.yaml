@@ -1,0 +1,88 @@
+summary: "Amp v3 — chat completion via LiteLLM"
+description: |
+  Two-step flow:
+    1. resolve_provider_config — reads f/ai/amp_providers, resolves the
+       provider, litellm model string, API key, and max_tokens for the
+       requested model.
+    2. call_provider_via_litellm — calls litellm.completion().  When
+       stream=true, emits SSE chunks via wm_stream in OpenAI
+       chat.completions.chunk format.
+
+  Designed to run behind a Windmill raw_stream HTTP trigger so that
+  streaming responses flow to the client in real time.
+
+value:
+  modules:
+    - id: resolve
+      summary: "Resolve provider config from amp_providers variable"
+      value:
+        type: rawscript
+        content: !inline resolve_provider_config.inline_script.rb
+        language: ruby
+        input_transforms:
+          model:
+            type: javascript
+            expr: flow_input.value.model ?? ''
+        tag: ""
+
+    - id: call_llm
+      summary: "Call LiteLLM (streaming or non-streaming)"
+      value:
+        type: rawscript
+        content: !inline call_provider_via_litellm.inline_script.py
+        language: python3
+        input_transforms:
+          provider_config:
+            type: javascript
+            expr: results.resolve
+          messages:
+            type: javascript
+            expr: flow_input.value.messages
+          stream:
+            type: javascript
+            expr: flow_input.value.stream ?? false
+          temperature:
+            type: javascript
+            expr: flow_input.value.temperature ?? null
+          max_tokens:
+            type: javascript
+            expr: flow_input.value.max_tokens ?? null
+          tools:
+            type: javascript
+            expr: flow_input.value.tools ?? null
+          tool_choice:
+            type: javascript
+            expr: flow_input.value.tool_choice ?? null
+        tag: ""
+
+schema:
+  $schema: "https://json-schema.org/draft/2020-12/schema"
+  type: object
+  required:
+    - messages
+  properties:
+    model:
+      type: string
+      description: "Model name (e.g. claude-sonnet-4-20250514). Falls back to default from amp_providers."
+    messages:
+      type: array
+      description: "OpenAI-format messages array."
+      items:
+        type: object
+    stream:
+      type: boolean
+      description: "If true, stream SSE chunks via wm_stream."
+      default: false
+    temperature:
+      type: number
+      description: "Sampling temperature."
+    max_tokens:
+      type: integer
+      description: "Override max tokens (otherwise uses provider default)."
+    tools:
+      type: array
+      description: "OpenAI-format tool definitions."
+      items:
+        type: object
+    tool_choice:
+      description: "Tool choice strategy (auto, none, required, or specific tool)."

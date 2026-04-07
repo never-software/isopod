@@ -1,0 +1,7 @@
+summary: "E2E test — raw_stream SSE output"
+description: |
+  Demonstrates wm_stream.write() emitting SSE events from a Windmill script.
+  Used to verify that the raw_stream HTTP trigger is working end-to-end.
+language: python3
+is_template: false
+tag: ""

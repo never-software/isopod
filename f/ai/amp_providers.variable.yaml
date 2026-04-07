@@ -1,0 +1,32 @@
+# Windmill variable: f/ai/amp_providers
+# Provider configuration for amp_v3 — looked up by resolve_provider_config (step 1).
+#
+# Each key is a provider name.  The flow resolves which provider to use based on
+# the model requested in the incoming chat completion request.
+
+is_secret: true
+description: "AI provider configuration for amp v3 (model routing, API keys)"
+value: |
+  {
+    "providers": {
+      "anthropic": {
+        "api_key_variable": "f/ai/anthropic_api_key",
+        "models": {
+          "claude-sonnet-4-20250514": {
+            "litellm_model": "anthropic/claude-sonnet-4-20250514",
+            "max_tokens": 8192
+          },
+          "claude-opus-4-20250514": {
+            "litellm_model": "anthropic/claude-opus-4-20250514",
+            "max_tokens": 8192
+          },
+          "claude-haiku-3-5": {
+            "litellm_model": "anthropic/claude-3-5-haiku-20241022",
+            "max_tokens": 8192
+          }
+        }
+      }
+    },
+    "default_provider": "anthropic",
+    "default_model": "claude-sonnet-4-20250514"
+  }

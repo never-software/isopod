@@ -1,0 +1,29 @@
+# Windmill HTTP trigger — raw_stream mode for amp_v3 flow.
+#
+# This exposes the amp_v3 flow as an HTTP endpoint that supports
+# Server-Sent Events (SSE) streaming.  When the client sends
+# stream=true in the request body, chunks are delivered in real time
+# via wm_stream.write().
+#
+# Route: POST /api/w/<workspace>/jobs/run_wait_result/f/ai/amp_v3
+#   (or a custom route_path if configured below)
+#
+# Windmill HTTP trigger configuration:
+#   - is_raw_stream: true  →  keeps the HTTP connection open and pipes
+#     writes to WM_STREAM_FD back to the client as they happen.
+#   - The trigger passes the full JSON body as flow_input.value.
+#
+# NOTE: As of Windmill's current version, HTTP triggers may need to
+# be configured via the UI for raw_stream mode.  This YAML serves as
+# the declarative source of truth; sync it to Windmill via wmill CLI:
+#
+#     wmill push --include-triggers
+
+path: f/ai/amp_v3_stream
+script_path: f/ai/amp_v3
+route_path: /api/ai/v3/chat/completions
+http_method: POST
+is_flow: true
+is_raw_stream: true
+is_async: false
+requires_auth: true
