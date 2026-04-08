@@ -71,6 +71,9 @@ export interface LayerInfo {
   status: "fresh" | "stale" | "not built";
   storedVersion?: string;
   content: string[];
+  from?: string;
+  needs?: string[];
+  depth: number;
 }
 
 export interface CacheInfo {
@@ -81,6 +84,7 @@ export interface CacheInfo {
     sizeMB?: number;
     created?: string;
   };
+  isDAG: boolean;
 }
 
 // ── Remove warnings ─────────────────────────────────────────────────
@@ -92,4 +96,17 @@ export interface RemoveWarning {
 
 // ── Navigation ──────────────────────────────────────────────────────
 
-export type View = "pods" | "indexer" | "database" | "cache";
+export type View = "pods" | "indexer" | "database" | "cache" | "settings";
+
+// ── Settings types ─────────────────────────────────────────────────
+
+export interface ServicePort {
+  label: string;
+  port: number;
+  protocol: "http" | "https";
+}
+
+export interface Settings {
+  autoStart: boolean;
+  services: ServicePort[];
+}

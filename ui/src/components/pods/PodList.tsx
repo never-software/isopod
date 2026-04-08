@@ -1,7 +1,7 @@
-import { For, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { For, Show, createSignal, createEffect, createResource, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { fetchPods, podUp, podDown, podWarnings, podRemove } from "../../api";
-import type { Pod, RemoveWarning } from "../../types";
+import { fetchPods, podUp, podDown, podWarnings, podRemove, fetchSettings } from "../../api";
+import type { Pod, RemoveWarning, ServicePort } from "../../types";
 import { CreatePodWizard } from "./CreatePodWizard";
 
 interface LogEntry {
@@ -18,6 +18,7 @@ export function PodList() {
   const [errorInfo, setErrorInfo] = createSignal<{ pod: string; message: string } | null>(null);
   const [logs, setLogs] = createSignal<LogEntry[]>([]);
   const [showWizard, setShowWizard] = createSignal(false);
+  const [settings] = createResource(fetchSettings, { initialValue: { autoStart: false, services: [] } });
 
   async function refreshPods() {
     try {
@@ -124,6 +125,7 @@ export function PodList() {
               {(pod) => (
                 <PodCard
                   pod={pod}
+                  services={settings()?.services || []}
                   loading={actionPod() === pod.name}
                   statusMessage={actionPod() === pod.name ? statusMessage() : null}
                   error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
@@ -181,6 +183,7 @@ function ActivityLog(props: { entries: LogEntry[]; onClear: () => void }) {
 
 function PodCard(props: {
   pod: Pod;
+  services: ServicePort[];
   loading: boolean;
   statusMessage: string | null;
   error: string | null;
@@ -271,6 +274,26 @@ function PodCard(props: {
                 <span class="text-zinc-600">/</span>
                 <span class="text-cyan-400 font-mono">{repo.branch}</span>
               </div>
+            )}
+          </For>
+        </div>
+      </Show>
+
+      <Show when={isRunning() && props.services.length > 0}>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <For each={props.services}>
+            {(svc) => (
+              <a
+                href={`${svc.protocol}://${props.pod.name}.orb.local:${svc.port}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-1 text-xs text-cyan-400/70 hover:text-cyan-300 transition-colors"
+              >
+                <span>{svc.label}</span>
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                </svg>
+              </a>
             )}
           </For>
         </div>

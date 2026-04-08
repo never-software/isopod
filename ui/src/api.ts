@@ -9,6 +9,7 @@ import type {
   Repo,
   CacheInfo,
   RemoveWarning,
+  Settings,
 } from "./types";
 
 const BASE = "/api";
@@ -94,8 +95,8 @@ export const toggleWatchPod = (podName: string, enabled: boolean) => post<{ podN
 
 // ── Settings ───────────────────────────────────────────────────────
 
-export const fetchSettings = () => get<{ autoStart: boolean }>("/settings");
-export const updateSettings = (settings: { autoStart?: boolean }) => post<{ autoStart: boolean }>("/settings", settings);
+export const fetchSettings = () => get<Settings>("/settings");
+export const updateSettings = (settings: Partial<Settings>) => post<Settings>("/settings", settings);
 
 // ── Cache ───────────────────────────────────────────────────────────
 

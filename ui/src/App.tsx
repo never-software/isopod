@@ -5,8 +5,9 @@ import { PodList } from "./components/pods/PodList";
 import { IndexerOverview } from "./components/indexer/IndexerOverview";
 import { SnapshotList } from "./components/db/SnapshotList";
 import { CacheOverview } from "./components/cache/CacheOverview";
+import { SettingsOverview } from "./components/settings/SettingsOverview";
 
-const VIEWS: View[] = ["pods", "indexer", "database", "cache"];
+const VIEWS: View[] = ["pods", "indexer", "database", "cache", "settings"];
 
 function getInitialView(): View {
   const hash = location.hash.slice(1);
@@ -37,6 +38,9 @@ export default function App() {
           </Match>
           <Match when={view() === "cache"}>
             <CacheOverview />
+          </Match>
+          <Match when={view() === "settings"}>
+            <SettingsOverview />
           </Match>
         </Switch>
       </main>
