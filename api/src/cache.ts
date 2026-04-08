@@ -3,7 +3,6 @@ import { existsSync, rmSync } from "fs";
 import { join } from "path";
 import { config } from "./config.js";
 import {
-  layerNames,
   layerCurrentVersion,
   layerStoredVersion,
   layerStatus,
@@ -12,18 +11,26 @@ import {
   layersFrom,
   layersAfter,
   layerDeleteVersion,
+  layerGraph,
+  isDAGMode,
+  layerDepth,
 } from "./layers.js";
-import { requireDocker, buildAll, dockerCleanup } from "./docker.js";
+import { requireDocker, buildAll } from "./docker.js";
 import type { CacheInfo, LayerInfo } from "./types.js";
 
 export function cacheList(): CacheInfo {
-  const names = layerNames();
-  const layers: LayerInfo[] = names.map((name) => ({
+  const graph = layerGraph();
+  const dag = isDAGMode(graph);
+
+  const layers: LayerInfo[] = [...graph.entries()].map(([name, parsed]) => ({
     name,
     version: layerCurrentVersion(name),
     status: layerStatus(name),
     storedVersion: layerStoredVersion(name) || undefined,
     content: layerContent(name),
+    from: parsed.from,
+    needs: parsed.needs.length > 0 ? parsed.needs : undefined,
+    depth: dag ? layerDepth(name, graph) : 0,
   }));
 
   let image: CacheInfo["image"] = {
@@ -49,7 +56,7 @@ export function cacheList(): CacheInfo {
     };
   } catch { /* image doesn't exist */ }
 
-  return { layers, image };
+  return { layers, image, isDAG: dag };
 }
 
 export function cacheRebuild(layer: string, onLog?: (msg: string) => void): void {

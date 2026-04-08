@@ -24,6 +24,38 @@ export function CacheOverview() {
     return expanded().has(name);
   }
 
+  const isDAG = () => cache()?.isDAG ?? false;
+
+  /** Build tree connector prefix for each layer in DAG mode */
+  function treePrefix(layers: LayerInfo[]): Map<string, string> {
+    const prefixes = new Map<string, string>();
+    // Group children by parent
+    const childrenOf = new Map<string | undefined, LayerInfo[]>();
+    for (const layer of layers) {
+      const parent = layer.from;
+      const list = childrenOf.get(parent) || [];
+      list.push(layer);
+      childrenOf.set(parent, list);
+    }
+
+    function walk(layer: LayerInfo, prefix: string, connector: string) {
+      prefixes.set(layer.name, prefix + connector);
+      const children = childrenOf.get(layer.name) || [];
+      children.forEach((child, i) => {
+        const isLast = i === children.length - 1;
+        const nextPrefix = prefix + (connector ? (connector.startsWith("\u2514") ? "   " : "\u2502  ") : "");
+        const childConnector = isLast ? "\u2514\u2500 " : "\u251C\u2500 ";
+        walk(child, nextPrefix, childConnector);
+      });
+    }
+
+    const roots = childrenOf.get(undefined) || [];
+    for (const root of roots) {
+      walk(root, "", "");
+    }
+    return prefixes;
+  }
+
   type Row =
     | { kind: "layer"; layer: LayerInfo; index: number }
     | { kind: "content"; layer: LayerInfo };
@@ -32,13 +64,42 @@ export function CacheOverview() {
     const layers = cache()?.layers ?? [];
     const exp = expanded();
     const result: Row[] = [];
-    layers.forEach((layer, i) => {
-      result.push({ kind: "layer", layer, index: i });
-      if (exp.has(layer.name) && layer.content.length > 0) {
-        result.push({ kind: "content", layer });
+    if (isDAG()) {
+      // In DAG mode, emit layers in tree order (DFS) instead of flat order
+      const childrenOf = new Map<string | undefined, LayerInfo[]>();
+      for (const layer of layers) {
+        const parent = layer.from;
+        const list = childrenOf.get(parent) || [];
+        list.push(layer);
+        childrenOf.set(parent, list);
       }
-    });
+      let idx = 0;
+      function walkRows(layer: LayerInfo) {
+        result.push({ kind: "layer", layer, index: idx++ });
+        if (exp.has(layer.name) && layer.content.length > 0) {
+          result.push({ kind: "content", layer });
+        }
+        for (const child of childrenOf.get(layer.name) || []) {
+          walkRows(child);
+        }
+      }
+      for (const root of childrenOf.get(undefined) || []) {
+        walkRows(root);
+      }
+    } else {
+      layers.forEach((layer, i) => {
+        result.push({ kind: "layer", layer, index: i });
+        if (exp.has(layer.name) && layer.content.length > 0) {
+          result.push({ kind: "content", layer });
+        }
+      });
+    }
     return result;
+  };
+
+  const treePrefixes = () => {
+    const layers = cache()?.layers ?? [];
+    return isDAG() ? treePrefix(layers) : new Map<string, string>();
   };
 
   async function handleInvalidate(layer: string) {
@@ -119,7 +180,9 @@ export function CacheOverview() {
             <table class="w-full text-sm">
               <thead>
                 <tr class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wider">
-                  <th class="text-left px-4 py-2.5 font-medium w-8">#</th>
+                  <Show when={!isDAG()}>
+                    <th class="text-left px-4 py-2.5 font-medium w-8">#</th>
+                  </Show>
                   <th class="text-left px-4 py-2.5 font-medium">Layer</th>
                   <th class="text-left px-4 py-2.5 font-medium">Status</th>
                   <th class="text-left px-4 py-2.5 font-medium">Current</th>
@@ -133,7 +196,7 @@ export function CacheOverview() {
                     if (row.kind === "content") {
                       return (
                         <tr class="bg-zinc-950">
-                          <td class="py-0" colspan="6">
+                          <td class="py-0" colspan={isDAG() ? 5 : 6}>
                             <pre class="px-10 py-3 text-xs font-mono text-zinc-400 overflow-x-auto whitespace-pre-wrap">{row.layer.content.join("\n")}</pre>
                           </td>
                         </tr>
@@ -141,18 +204,29 @@ export function CacheOverview() {
                     }
                     const { layer, index } = row;
                     const style = STATUS_STYLES[layer.status];
+                    const prefix = treePrefixes().get(layer.name) || "";
                     return (
                       <tr
                         class={`hover:bg-zinc-800/30 transition-colors cursor-pointer ${isExpanded(layer.name) ? "bg-zinc-800/20" : ""}`}
                         onClick={() => toggleExpand(layer.name)}
                       >
-                        <td class="px-4 py-2.5 text-zinc-600 font-mono text-xs">{index + 1}</td>
+                        <Show when={!isDAG()}>
+                          <td class="px-4 py-2.5 text-zinc-600 font-mono text-xs">{index + 1}</td>
+                        </Show>
                         <td class="px-4 py-2.5 font-medium text-zinc-200">
                           <span class="flex items-center gap-2">
+                            <Show when={isDAG() && prefix}>
+                              <span class="font-mono text-zinc-600 whitespace-pre">{prefix}</span>
+                            </Show>
                             <svg class={`w-3 h-3 text-zinc-500 transition-transform flex-shrink-0 ${isExpanded(layer.name) ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                               <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                             </svg>
-                            {layer.name}
+                            <span>
+                              {layer.name}
+                              <Show when={isDAG() && layer.needs && layer.needs.length > 0}>
+                                <span class="block text-xs text-zinc-600 font-normal">needs: {layer.needs!.join(", ")}</span>
+                              </Show>
+                            </span>
                           </span>
                         </td>
                         <td class="px-4 py-2.5">

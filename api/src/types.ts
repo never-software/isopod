@@ -111,6 +111,9 @@ export interface LayerInfo {
   status: "fresh" | "stale" | "not built";
   storedVersion?: string;
   content: string[];
+  from?: string;
+  needs?: string[];
+  depth: number;
 }
 
 // ── Cache types ─────────────────────────────────────────────────────
@@ -123,6 +126,7 @@ export interface CacheInfo {
     sizeMB?: number;
     created?: string;
   };
+  isDAG: boolean;
 }
 
 // ── Navigation ──────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ export { setupWorkspace, teardownWorkspace, getUrls, waitForUrls } from "./works
 export {
   layerNames, layerCurrentVersion, layerStoredVersion, layerSaveVersion,
   layerDeleteVersion, layersSaveAll, layerStatus, layersFrom, layersAfter, layerExists,
+  parseLayers, layerGraph, isDAGMode, layerDependents, layerDependencies, layerDepth,
 } from "./layers.js";
 
 // Pods
