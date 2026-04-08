@@ -83,6 +83,9 @@ fi
 # Frontend API URL: derive from window.location so it works with any pod name:
 #   const API_URL = `${window.location.protocol}//${window.location.hostname}:3000`
 
+# ── Remove stale .git at /workspace (prevents phantom "workspace" repo in SCM)
+rm -rf /workspace/.git
+
 # ── code-server (browser-based VS Code) ─────────────────────────────────────
 if command -v code-server &> /dev/null; then
   echo "Starting code-server on port 8443..."
@@ -91,6 +94,23 @@ if command -v code-server &> /dev/null; then
   if ! code-server --list-extensions 2>/dev/null | grep -qi "startup-terminals"; then
     echo "Installing Startup Terminals extension..."
     code-server --install-extension /tmp/startup-terminals.vsix 2>/dev/null || true
+  fi
+
+  # Generate multi-root workspace file so each repo gets its own
+  # Explorer root and Source Control section
+  WORKSPACE_FILE="/workspace/workspace.code-workspace"
+  if [ -n "$ISOPOD_REPOS" ]; then
+    IFS=',' read -ra repos <<< "$ISOPOD_REPOS"
+    FOLDERS=""
+    for repo in "${repos[@]}"; do
+      [ -n "$FOLDERS" ] && FOLDERS="$FOLDERS,"
+      FOLDERS="$FOLDERS{\"path\":\"/workspace/$repo\",\"name\":\"$repo\"}"
+    done
+    echo "{\"folders\":[$FOLDERS],\"settings\":{}}" > "$WORKSPACE_FILE"
+    echo "Generated multi-root workspace for: $ISOPOD_REPOS"
+    CODE_TARGET="$WORKSPACE_FILE"
+  else
+    CODE_TARGET="/workspace"
   fi
 
   CERT_ARGS=""
@@ -107,7 +127,7 @@ if command -v code-server &> /dev/null; then
     --auth none \
     $CERT_ARGS \
     --disable-telemetry \
-    /workspace &> /tmp/code-server.log &
+    "$CODE_TARGET" &> /tmp/code-server.log &
   echo "code-server ready at https://$(hostname).orb.local:8443"
 fi
 

@@ -16,6 +16,9 @@ services:
     environment:
       - PGUSER=postgres
       - TZ=UTC
+      - TERM=xterm-256color
+      - COLORTERM=truecolor
+      - CLAUDE_CODE_NO_FLICKER=1
       - ISOPOD_REPOS=__REPO_LIST__
     volumes:
       - data:/pgdata

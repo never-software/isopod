@@ -104,6 +104,23 @@ if command -v code-server &> /dev/null; then
     code-server --install-extension /tmp/startup-terminals.vsix 2>/dev/null || true
   fi
 
+  # Generate multi-root workspace file so each repo gets its own
+  # Explorer root and Source Control section
+  WORKSPACE_FILE="/workspace/workspace.code-workspace"
+  if [ -n "$ISOPOD_REPOS" ]; then
+    IFS=',' read -ra repos <<< "$ISOPOD_REPOS"
+    FOLDERS=""
+    for repo in "${repos[@]}"; do
+      [ -n "$FOLDERS" ] && FOLDERS="$FOLDERS,"
+      FOLDERS="$FOLDERS{\"path\":\"/workspace/$repo\",\"name\":\"$repo\"}"
+    done
+    echo "{\"folders\":[$FOLDERS],\"settings\":{}}" > "$WORKSPACE_FILE"
+    echo "Generated multi-root workspace for: $ISOPOD_REPOS"
+    CODE_TARGET="$WORKSPACE_FILE"
+  else
+    CODE_TARGET="/workspace"
+  fi
+
   CERT_ARGS=""
   if [ -f /certs/_wildcard.orb.local+2.pem ]; then
     CERT_ARGS="--cert /certs/_wildcard.orb.local+2.pem --cert-key /certs/_wildcard.orb.local+2-key.pem"
@@ -118,7 +135,7 @@ if command -v code-server &> /dev/null; then
     --auth none \
     $CERT_ARGS \
     --disable-telemetry \
-    /workspace &> /tmp/code-server.log &
+    "$CODE_TARGET" &> /tmp/code-server.log &
   echo "code-server ready at https://$(hostname).orb.local:8443"
 fi
 
