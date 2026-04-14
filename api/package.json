@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "postinstall": "clang -O2 -o bin/clone bin/clone.c || true"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.13.0",

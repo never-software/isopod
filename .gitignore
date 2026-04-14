@@ -9,6 +9,7 @@ node_modules/
 # API
 api/dist/
 api/node_modules/
+api/bin/clone
 
 # CLI
 cli/dist/
