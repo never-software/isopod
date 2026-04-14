@@ -99,7 +99,7 @@ export default function App() {
                   <IndexerOverview stack={state().stack} />
                 </Match>
                 <Match when={state().subView === "snapshots"}>
-                  <SnapshotList />
+                  <SnapshotList stack={state().stack} />
                 </Match>
                 <Match when={state().subView === "base"}>
                   <CacheOverview stack={state().stack} />

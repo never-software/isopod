@@ -6,7 +6,7 @@ import { config } from "./config.js";
 import { listPods, createPod, podUp, podDown, podExists, validatePodName, getRemoveWarnings, removePod } from "./pods.js";
 import { discoverRepos } from "./repos.js";
 import { defaultBranchFor } from "./git.js";
-import { dbList } from "./db.js";
+import { dbList, dbSave } from "./db.js";
 import { cacheList, cacheDelete, cacheDestroy } from "./cache.js";
 import { buildAll } from "./docker.js";
 import { getStatus, deleteCollection, deleteBranch, getCollectionBranches, getAllBranches } from "./indexer/qdrant.js";
@@ -97,6 +97,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/pods/create") {
       const body = await readBody(req);
       return apiCreatePod(res, body);
+    }
+
+    if (path === "/api/snapshots/create") {
+      const body = await readBody(req);
+      return apiCreateSnapshot(res, body);
     }
 
     const body = await readBody(req);
@@ -410,6 +415,35 @@ async function apiCreatePod(res: ServerResponse, body: any): Promise<void> {
 function apiSnapshots(res: ServerResponse): void {
   const snapshots = dbList();
   json(res, 200, snapshots);
+}
+
+async function apiCreateSnapshot(res: ServerResponse, body: any): Promise<void> {
+  const pod = typeof body?.pod === "string" ? body.pod.trim() : "";
+  const snapshot = typeof body?.snapshot === "string" ? body.snapshot.trim() : "";
+
+  if (!pod) {
+    json(res, 400, { error: "Pod name is required" });
+    return;
+  }
+  if (!snapshot) {
+    json(res, 400, { error: "Snapshot name is required" });
+    return;
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(snapshot)) {
+    json(res, 400, { error: "Snapshot name must start with alphanumeric and contain only letters, numbers, dashes, and underscores" });
+    return;
+  }
+
+  res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
+  try {
+    dbSave(pod, snapshot, (msg) =>
+      res.write(JSON.stringify({ type: "log", message: msg }) + "\n"),
+    );
+    res.write(JSON.stringify({ type: "done" }) + "\n");
+  } catch (error: any) {
+    res.write(JSON.stringify({ type: "error", message: error.message }) + "\n");
+  }
+  res.end();
 }
 
 function apiStacks(res: ServerResponse): void {

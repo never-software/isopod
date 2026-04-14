@@ -149,3 +149,38 @@ export const destroyCache = (stack: string) =>
 // ── Database ────────────────────────────────────────────────────────
 
 export const fetchSnapshots = () => get<Snapshot[]>("/snapshots");
+
+export async function createSnapshot(
+  pod: string,
+  snapshot: string,
+  onProgress?: (msg: string) => void,
+): Promise<void> {
+  const res = await fetch(`${BASE}/snapshots/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pod, snapshot }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const body = await res.json(); detail = body.error || ""; } catch {}
+    throw new Error(detail || `API error: ${res.status}`);
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop()!;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === "log" && onProgress) onProgress(event.message);
+      else if (event.type === "error") throw new Error(event.message);
+    }
+  }
+}
