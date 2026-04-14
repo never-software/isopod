@@ -3,6 +3,7 @@ import { join } from "path";
 import { execSync } from "child_process";
 import { config } from "./config.js";
 import { requireDocker, workspaceContainer } from "./docker.js";
+import { findPodStack } from "./pods.js";
 import type { Snapshot } from "./types.js";
 
 const SNAP_PREFIX = "isopod-snap";
@@ -17,24 +18,26 @@ function snapVolume(snapName: string): string {
   return `${SNAP_PREFIX}-${snapName}`;
 }
 
-function dbStop(container: string): void {
-  const hook = join(config.dockerDir, "hooks", "db-stop");
+function dbStop(container: string, dockerDir: string): void {
+  const hookDir = dockerDir;
+  const hook = join(hookDir, "hooks", "db-stop");
   if (existsSync(hook)) {
     execSync(hook, {
       timeout: 30000,
       stdio: "pipe",
-      env: { ...process.env, CONTAINER: container },
+      env: { ...process.env, CONTAINER: container, DOCKER_DIR: hookDir },
     });
   }
 }
 
-function dbStart(container: string): void {
-  const hook = join(config.dockerDir, "hooks", "db-start");
+function dbStart(container: string, dockerDir: string): void {
+  const hookDir = dockerDir;
+  const hook = join(hookDir, "hooks", "db-start");
   if (existsSync(hook)) {
     execSync(hook, {
       timeout: 30000,
       stdio: "pipe",
-      env: { ...process.env, CONTAINER: container },
+      env: { ...process.env, CONTAINER: container, DOCKER_DIR: hookDir },
     });
   }
 }
@@ -54,12 +57,11 @@ export function dbSave(
   onLog?: (msg: string) => void
 ): void {
   const log = onLog || (() => {});
-  const podDir = join(config.podsDir, featureName);
-  if (!existsSync(podDir)) throw new Error(`Pod '${featureName}' not found`);
+  const stack = findPodStack(featureName);
 
   requireDocker();
 
-  const container = workspaceContainer(featureName);
+  const container = workspaceContainer(featureName, stack);
   try {
     execSync(`docker inspect "${container}"`, { stdio: "ignore", timeout: 10000 });
   } catch {
@@ -76,10 +78,12 @@ export function dbSave(
     try { execSync(`docker volume rm "${snapVol}"`, { stdio: "ignore", timeout: 10000 }); } catch { /* OK */ }
   } catch { /* doesn't exist, OK */ }
 
+  const dockerDir = config.stackDockerDir(stack);
+
   log(`Saving database snapshot: ${snapName}`);
 
   log("Stopping database...");
-  dbStop(container);
+  dbStop(container, dockerDir);
 
   log("Creating snapshot volume...");
   execSync(`docker volume create "${snapVol}"`, { stdio: "ignore", timeout: 10000 });
@@ -88,7 +92,7 @@ export function dbSave(
   copyVolume(dataVol, snapVol);
 
   log("Starting database...");
-  dbStart(container);
+  dbStart(container, dockerDir);
 
   log(`Snapshot '${snapName}' saved from '${featureName}'`);
 }
@@ -99,12 +103,11 @@ export function dbRestore(
   onLog?: (msg: string) => void
 ): void {
   const log = onLog || (() => {});
-  const podDir = join(config.podsDir, featureName);
-  if (!existsSync(podDir)) throw new Error(`Pod '${featureName}' not found`);
+  const stack = findPodStack(featureName);
 
   requireDocker();
 
-  const container = workspaceContainer(featureName);
+  const container = workspaceContainer(featureName, stack);
   try {
     execSync(`docker inspect "${container}"`, { stdio: "ignore", timeout: 10000 });
   } catch {
@@ -120,16 +123,18 @@ export function dbRestore(
     throw new Error(`Snapshot '${snapName}' not found. Run 'isopod db list' to see available snapshots.`);
   }
 
+  const dockerDir = config.stackDockerDir(stack);
+
   log(`Restoring database snapshot: ${snapName} → ${featureName}`);
 
   log("Stopping database...");
-  dbStop(container);
+  dbStop(container, dockerDir);
 
   log("Restoring snapshot...");
   copyVolume(snapVol, dataVol);
 
   log("Starting database...");
-  dbStart(container);
+  dbStart(container, dockerDir);
 
   log(`Snapshot '${snapName}' restored to '${featureName}'`);
 }

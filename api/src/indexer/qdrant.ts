@@ -18,8 +18,8 @@ export function getClient(): QdrantClient {
 
 // ── Collection naming ────────────────────────────────────────────────
 
-export function repoCollectionName(repo: string): string {
-  return `${config.collectionPrefix}-${repo}`;
+export function repoCollectionName(stack: string, repo: string): string {
+  return `ip-${stack}-${repo}`;
 }
 
 // ── Collection management ────────────────────────────────────────────
@@ -228,17 +228,17 @@ export async function deleteCollection(name: string): Promise<void> {
 
 export async function search(
   query: string,
-  opts: SearchOptions = {}
+  opts: SearchOptions
 ): Promise<SearchResult[]> {
   const limit = opts.limit || 10;
-  const repos = opts.repo ? [opts.repo] : await discoverRepos();
+  const repos = opts.repo ? [opts.repo] : await discoverRepos(opts.stack);
 
   const [queryEmbedding] = await embedTexts([query]);
 
-  let allResults: SearchResult[] = [];
+  const allResults: SearchResult[] = [];
 
   for (const repo of repos) {
-    const col = repoCollectionName(repo);
+    const col = repoCollectionName(opts.stack, repo);
 
     const baseResults = await searchCollection(col, queryEmbedding, limit, "base");
 
@@ -247,18 +247,17 @@ export async function search(
 
       const [podResults, tombstonePaths] = await Promise.all([
         searchCollection(col, queryEmbedding, limit, podBranch),
-        getTombstones(col, podBranch).catch(() => [] as string[]),
+        getTombstones(col, podBranch),
       ]);
 
       const podFilePaths = new Set(podResults.map((r) => r.payload.file_path));
       const tombstoneSet = new Set(tombstonePaths);
       const excludeFromBase = new Set([...podFilePaths, ...tombstoneSet]);
 
-      const merged = [
+      allResults.push(
         ...podResults,
         ...baseResults.filter((r) => !excludeFromBase.has(r.payload.file_path)),
-      ];
-      allResults.push(...merged);
+      );
     } else {
       allResults.push(...baseResults);
     }
@@ -298,7 +297,7 @@ async function searchCollection(
 export async function getStatus(): Promise<{ name: string; points: number }[]> {
   const collections = await getClient().getCollections();
   const isopodCollections = collections.collections.filter((c) =>
-    c.name.startsWith(config.collectionPrefix + "-")
+    c.name.startsWith("ip-")
   );
 
   const status: { name: string; points: number }[] = [];
@@ -317,7 +316,7 @@ export async function getStatus(): Promise<{ name: string; points: number }[]> {
 export async function getAllBranches(): Promise<{ collection: string; branch: string; points: number; tombstones: number }[]> {
   const collections = await getClient().getCollections();
   const isopodCollections = collections.collections.filter((c) =>
-    c.name.startsWith(config.collectionPrefix + "-")
+    c.name.startsWith("ip-")
   );
 
   const results: { collection: string; branch: string; points: number; tombstones: number }[] = [];
@@ -410,12 +409,14 @@ export async function getExistingFileHash(
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-async function discoverRepos(): Promise<string[]> {
+async function discoverRepos(stack: string): Promise<string[]> {
   const collections = await getClient().getCollections();
+  const prefix = `ip-${stack}-`;
   const repos = new Set<string>();
   for (const col of collections.collections) {
-    const match = col.name.match(new RegExp(`^${config.collectionPrefix}-(.+)$`));
-    if (match) repos.add(match[1]);
+    if (col.name.startsWith(prefix)) {
+      repos.add(col.name.slice(prefix.length));
+    }
   }
   return Array.from(repos);
 }

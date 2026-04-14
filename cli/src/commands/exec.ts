@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { execFileSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
-import { config, workspaceContainer } from "isopod-api";
+import { findPodStack, config, workspaceContainer } from "isopod-api";
 import { error } from "../output.js";
 
 export const execCommand = new Command("exec")
@@ -12,12 +12,13 @@ export const execCommand = new Command("exec")
   .option("--dir <path>", "Working directory inside container", "/workspace")
   .allowUnknownOption()
   .action((featureName: string, command: string[], opts: { dir: string }) => {
-    const podDir = join(config.podsDir, featureName);
-    if (!existsSync(podDir)) {
+    let stack: string;
+    try { stack = findPodStack(featureName); } catch {
       error(`Pod '${featureName}' not found`);
+      return;
     }
 
-    const container = workspaceContainer(featureName);
+    const container = workspaceContainer(featureName, stack);
 
     try {
       execFileSync("docker", ["inspect", container], { stdio: "ignore", timeout: 5000 });

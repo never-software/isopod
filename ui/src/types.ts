@@ -14,6 +14,7 @@ export interface Pod {
   name: string;
   repos: PodRepo[];
   container: ContainerStatus;
+  stack: string;
 }
 
 // ── Indexer types ───────────────────────────────────────────────────
@@ -30,7 +31,7 @@ export interface BranchInfo {
   tombstones: number;
 }
 
-export interface DaemonStatus {
+export interface IndexerStatus {
   running: boolean;
   pid: number | null;
 }
@@ -41,6 +42,7 @@ export interface WatchTarget {
   collectionName: string;
   branch: string;
   podName?: string;
+  stack: string;
   enabled: boolean;
 }
 
@@ -96,7 +98,12 @@ export interface RemoveWarning {
 
 // ── Navigation ──────────────────────────────────────────────────────
 
-export type View = "pods" | "indexer" | "database" | "cache" | "settings";
+export type LandingSubView = "stacks" | "pods" | "indexes" | "snapshots" | "base" | "settings";
+export type StackSubView = "pods" | "indexes" | "snapshots" | "base" | "settings";
+
+export type NavState =
+  | { mode: "landing"; subView: LandingSubView }
+  | { mode: "stack"; stack: string; subView: StackSubView };
 
 // ── Settings types ─────────────────────────────────────────────────
 

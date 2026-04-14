@@ -18,16 +18,18 @@ import {
 import { requireDocker, buildAll } from "./docker.js";
 import type { CacheInfo, LayerInfo } from "./types.js";
 
-export function cacheList(): CacheInfo {
-  const graph = layerGraph();
+export function cacheList(stack?: string): CacheInfo {
+  const dockerDir = config.stackDockerDir(stack!);
+  const imageName = config.imageFor(stack!);
+  const graph = layerGraph(dockerDir);
   const dag = isDAGMode(graph);
 
   const layers: LayerInfo[] = [...graph.entries()].map(([name, parsed]) => ({
     name,
-    version: layerCurrentVersion(name),
-    status: layerStatus(name),
-    storedVersion: layerStoredVersion(name) || undefined,
-    content: layerContent(name),
+    version: layerCurrentVersion(name, dockerDir),
+    status: layerStatus(name, dockerDir),
+    storedVersion: layerStoredVersion(name, dockerDir) || undefined,
+    content: layerContent(name, dockerDir),
     from: parsed.from,
     needs: parsed.needs.length > 0 ? parsed.needs : undefined,
     depth: dag ? layerDepth(name, graph) : 0,
@@ -35,75 +37,86 @@ export function cacheList(): CacheInfo {
 
   let image: CacheInfo["image"] = {
     exists: false,
-    name: config.workspaceImage,
+    name: imageName,
   };
 
   try {
     const sizeStr = execSync(
-      `docker image inspect "${config.workspaceImage}" --format "{{.Size}}"`,
+      `docker image inspect "${imageName}" --format "{{.Size}}"`,
       { encoding: "utf-8", timeout: 10000 }
     ).trim();
     const createdStr = execSync(
-      `docker image inspect "${config.workspaceImage}" --format "{{.Created}}"`,
+      `docker image inspect "${imageName}" --format "{{.Created}}"`,
       { encoding: "utf-8", timeout: 10000 }
     ).trim();
 
     image = {
       exists: true,
-      name: config.workspaceImage,
+      name: imageName,
       sizeMB: Math.round(parseInt(sizeStr, 10) / 1024 / 1024),
       created: createdStr.split("T")[0],
     };
   } catch { /* image doesn't exist */ }
 
+  // If the image doesn't exist, no layer can be "fresh"
+  if (!image.exists) {
+    for (const layer of layers) {
+      layer.status = "not built";
+    }
+  }
+
   return { layers, image, isDAG: dag };
 }
 
-export function cacheRebuild(layer: string, onLog?: (msg: string) => void): void {
+export function cacheRebuild(layer: string, onLog?: (msg: string) => void, stack?: string): void {
   const log = onLog || (() => {});
+  const dockerDir = config.stackDockerDir(stack!);
 
-  if (!layerExists(layer)) {
+  if (!layerExists(layer, dockerDir)) {
     throw new Error(`Unknown layer: ${layer}. Run 'isopod cache list' to see available layers.`);
   }
 
   requireDocker();
 
   // Show cascade warning
-  const cascade = layersAfter(layer);
+  const cascade = layersAfter(layer, dockerDir);
   if (cascade.length > 0) {
     log(`Rebuilding '${layer}' will also rebuild: ${cascade.join(", ")}`);
   }
 
   // Invalidate stored hashes from this layer onwards
-  for (const l of layersFrom(layer)) {
-    layerDeleteVersion(l);
+  for (const l of layersFrom(layer, dockerDir)) {
+    layerDeleteVersion(l, dockerDir);
   }
 
   log(`Rebuilding workspace image from '${layer}'...`);
-  buildAll(log);
+  buildAll(log, stack);
   log("Rebuild complete. Run 'isopod up <name>' to apply to running pods.");
 }
 
-export function cacheDelete(layer: string, onLog?: (msg: string) => void): void {
+export function cacheDelete(layer: string, onLog?: (msg: string) => void, stack?: string): void {
   const log = onLog || (() => {});
+  const dockerDir = config.stackDockerDir(stack!);
 
-  if (!layerExists(layer)) {
+  if (!layerExists(layer, dockerDir)) {
     throw new Error(`Unknown layer: ${layer}. Run 'isopod cache list' to see available layers.`);
   }
 
-  layerDeleteVersion(layer);
+  layerDeleteVersion(layer, dockerDir);
   log(`Stored hash for '${layer}' deleted. Next build will treat it as stale.`);
 }
 
-export function cacheDestroy(onLog?: (msg: string) => void): void {
+export function cacheDestroy(onLog?: (msg: string) => void, stack?: string): void {
   const log = onLog || (() => {});
+  const dockerDir = config.stackDockerDir(stack!);
+  const imageName = config.imageFor(stack!);
 
   // Remove the workspace image
   try {
-    execSync(`docker image inspect "${config.workspaceImage}"`, { stdio: "ignore", timeout: 10000 });
+    execSync(`docker image inspect "${imageName}"`, { stdio: "ignore", timeout: 10000 });
     log("Removing workspace image...");
     try {
-      execSync(`docker rmi "${config.workspaceImage}"`, { stdio: "pipe", timeout: 30000 });
+      execSync(`docker rmi "${imageName}"`, { stdio: "pipe", timeout: 30000 });
     } catch {
       log("Could not remove image (may be in use by running containers)");
     }
@@ -112,7 +125,7 @@ export function cacheDestroy(onLog?: (msg: string) => void): void {
   }
 
   // Remove cached hashes
-  const cacheHashDir = join(config.dockerDir, ".cache-hashes");
+  const cacheHashDir = join(dockerDir, ".cache-hashes");
   if (existsSync(cacheHashDir)) {
     log("Removing cached hashes...");
     rmSync(cacheHashDir, { recursive: true, force: true });

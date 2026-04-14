@@ -7,13 +7,16 @@ import { info, success, error } from "../output.js";
 
 export const freshDbSeedCommand = new Command("fresh-db-seed")
   .description("Rebuild image and reseed the base database volume")
-  .action(() => {
+  .requiredOption("--stack <name>", "Stack to seed")
+  .action((opts: { stack: string }) => {
     try {
       requireDocker();
-      buildAll((msg) => info(msg));
+      buildAll((msg) => info(msg), opts.stack);
 
-      const baseVol = "isopod-base-data";
-      const dbSeedHook = join(config.dockerDir, "hooks", "db-seed");
+      const dockerDir = config.stackDockerDir(opts.stack);
+      const imageName = config.imageFor(opts.stack);
+      const baseVol = `isopod-base-data-${opts.stack}`;
+      const dbSeedHook = join(dockerDir, "hooks", "db-seed");
 
       if (!existsSync(dbSeedHook)) {
         info("No db-seed hook found — skipping database seed");
@@ -31,7 +34,7 @@ export const freshDbSeedCommand = new Command("fresh-db-seed")
         stdio: "inherit",
         env: {
           ...process.env,
-          WORKSPACE_IMAGE: config.workspaceImage,
+          WORKSPACE_IMAGE: imageName,
           BASE_VOLUME: baseVol,
         },
       });

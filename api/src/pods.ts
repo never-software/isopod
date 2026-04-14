@@ -6,6 +6,7 @@ import { discoverRepos, resolveRepo, listDirs } from "./repos.js";
 import { createRepoClone, getCurrentBranch } from "./git.js";
 import {
   requireDocker,
+  containerName,
   composeProject,
   composeFileFor,
   workspaceContainer,
@@ -20,41 +21,55 @@ import { setupWorkspace, teardownWorkspace, waitForUrls } from "./workspace.js";
 import type { UrlInfo } from "./workspace.js";
 import type { Pod, PodRepo, RemoveWarning } from "./types.js";
 
+// ── Stack helpers ─────────────────────────────────────────────────
+
+export function findPodStack(podName: string): string {
+  for (const stack of config.listStacks()) {
+    const podDir = join(config.stackPodsDir(stack), podName);
+    if (existsSync(podDir)) return stack;
+  }
+  throw new Error(`Pod '${podName}' not found in any stack`);
+}
+
 // ── List pods ──────────────────────────────────────────────────────
 
 export function listPods(): Pod[] {
   const pods: Pod[] = [];
-
-  if (!existsSync(config.podsDir)) return pods;
-
   const containerStatuses = getContainerStatuses();
 
-  const podNames = listDirs(config.podsDir).sort((a, b) => {
-    try {
-      return statSync(join(config.podsDir, b)).mtimeMs - statSync(join(config.podsDir, a)).mtimeMs;
-    } catch { return 0; }
-  });
+  for (const stack of config.listStacks()) {
+    const podsDir = config.stackPodsDir(stack);
+    if (!existsSync(podsDir)) continue;
 
-  for (const podName of podNames) {
-    const podDir = join(config.podsDir, podName);
-    const repos: PodRepo[] = [];
-
-    for (const repoName of listDirs(podDir)) {
-      if (repoName.startsWith(".")) continue;
-      const repoPath = join(podDir, repoName);
-      if (!existsSync(join(repoPath, ".git"))) continue;
-
-      const branch = getCurrentBranch(repoPath);
-      repos.push({ name: repoName, branch });
-    }
-
-    const status = containerStatuses.get(podName);
-
-    pods.push({
-      name: podName,
-      repos,
-      container: status || { state: "not created", status: "" },
+    const podNames = listDirs(podsDir).sort((a, b) => {
+      try {
+        return statSync(join(podsDir, b)).mtimeMs - statSync(join(podsDir, a)).mtimeMs;
+      } catch { return 0; }
     });
+
+    for (const podName of podNames) {
+      const podDir = join(podsDir, podName);
+      const repos: PodRepo[] = [];
+
+      for (const repoName of listDirs(podDir)) {
+        if (repoName.startsWith(".")) continue;
+        const repoPath = join(podDir, repoName);
+        if (!existsSync(join(repoPath, ".git"))) continue;
+
+        const branch = getCurrentBranch(repoPath);
+        repos.push({ name: repoName, branch });
+      }
+
+      const cname = containerName(podName, stack);
+      const status = containerStatuses.get(cname);
+
+      pods.push({
+        name: podName,
+        repos,
+        container: status || { state: "not created", status: "" },
+        stack,
+      });
+    }
   }
 
   return pods;
@@ -75,7 +90,9 @@ export function validatePodName(name: string): void {
 // ── Pod exists ─────────────────────────────────────────────────────
 
 export function podExists(name: string): boolean {
-  return existsSync(join(config.podsDir, name));
+  return config.listStacks().some(stack =>
+    existsSync(join(config.stackPodsDir(stack), name))
+  );
 }
 
 // ── Create pod ─────────────────────────────────────────────────────
@@ -83,13 +100,16 @@ export function podExists(name: string): boolean {
 export interface CreatePodOptions {
   repos?: string[];
   from?: string;
+  stack: string;
   onLog?: (msg: string) => void;
 }
 
-export async function createPod(name: string, opts: CreatePodOptions = {}): Promise<void> {
+export async function createPod(name: string, opts: CreatePodOptions): Promise<void> {
   validatePodName(name);
   const log = opts.onLog || (() => {});
-  const allRepos = discoverRepos();
+  const { stack } = opts;
+  const reposDir = config.stackReposDir(stack);
+  const allRepos = discoverRepos(reposDir);
 
   // Resolve repos
   let repos = opts.repos && opts.repos.length > 0 ? opts.repos : allRepos;
@@ -100,7 +120,7 @@ export async function createPod(name: string, opts: CreatePodOptions = {}): Prom
   // Validate repo names
   const validated: string[] = [];
   for (const repo of repos) {
-    const canonical = resolveRepo(repo);
+    const canonical = resolveRepo(repo, reposDir);
     if (canonical) {
       validated.push(canonical);
     } else {
@@ -109,35 +129,45 @@ export async function createPod(name: string, opts: CreatePodOptions = {}): Prom
   }
   repos = validated;
 
-  const podDir = join(config.podsDir, name);
+  const podDir = join(config.stackPodsDir(stack), name);
   if (existsSync(podDir)) {
     throw new Error(`Pod '${name}' already exists at ${podDir}`);
   }
 
+  // Check globally too — pod names must be unique across stacks (Docker container names are global)
+  if (podExists(name)) {
+    throw new Error(`Pod '${name}' already exists in another stack`);
+  }
+
   requireDocker();
 
-  log(`Creating pod: ${name}`);
+  const dockerDir = config.stackDockerDir(stack);
+  const imageName = config.imageFor(stack);
+
+  log(`Creating pod: ${name} (stack: ${stack})`);
   mkdirSync(podDir, { recursive: true });
 
-  // Step 1: Create local clones on the host
+  // Step 1: Create local clones on the host (in parallel)
   if (opts.from) {
     log(`Branching from: ${opts.from}`);
   }
 
-  for (const repoName of repos) {
-    log(`Creating ${repoName} workspace on branch ${name}...`);
-    createRepoClone(
-      join(config.reposDir, repoName),
-      join(podDir, repoName),
-      name,
-      opts.from,
-      log
-    );
-  }
+  log(`Creating ${repos.length} workspace(s) on branch ${name}...`);
+  await Promise.all(
+    repos.map((repoName) =>
+      createRepoClone(
+        join(reposDir, repoName),
+        join(podDir, repoName),
+        name,
+        opts.from,
+        log,
+      ),
+    ),
+  );
 
   // Step 2: Copy .env files from main repos into pod
   for (const dirName of repos) {
-    const srcRepo = join(config.reposDir, dirName);
+    const srcRepo = join(reposDir, dirName);
     const dstRepo = join(podDir, dirName);
     if (existsSync(srcRepo) && existsSync(dstRepo)) {
       copyEnvFiles(srcRepo, dstRepo);
@@ -145,7 +175,7 @@ export async function createPod(name: string, opts: CreatePodOptions = {}): Prom
   }
 
   // Step 3: Run pre-create hook
-  const preCreateHook = join(config.dockerDir, "hooks", "pre-create");
+  const preCreateHook = join(dockerDir, "hooks", "pre-create");
   if (existsSync(preCreateHook)) {
     log("Running pre-create hook...");
     try {
@@ -154,20 +184,21 @@ export async function createPod(name: string, opts: CreatePodOptions = {}): Prom
         stdio: "pipe",
         env: {
           ...process.env,
-          COMPOSE_PROJECT: composeProject(name),
-          WORKSPACE_IMAGE: config.workspaceImage,
+          COMPOSE_PROJECT: composeProject(name, stack),
+          WORKSPACE_IMAGE: imageName,
           POD_DIR: podDir,
           FEATURE_NAME: name,
+          DOCKER_DIR: dockerDir,
         },
       });
     } catch { /* ignore hook failures */ }
   }
 
   // Step 4: Start container
-  await podUp(name, { cloneDb: true, onLog: log });
+  await podUp(name, { cloneDb: true, onLog: log, waitForServices: false });
 
   // Step 5: Run post-create hook
-  const postCreateHook = join(config.dockerDir, "hooks", "post-create");
+  const postCreateHook = join(dockerDir, "hooks", "post-create");
   if (existsSync(postCreateHook)) {
     log("Running post-create hook...");
     try {
@@ -176,9 +207,10 @@ export async function createPod(name: string, opts: CreatePodOptions = {}): Prom
         stdio: "pipe",
         env: {
           ...process.env,
-          CONTAINER: name,
+          CONTAINER: containerName(name, stack),
           POD_DIR: podDir,
           FEATURE_NAME: name,
+          DOCKER_DIR: dockerDir,
         },
       });
     } catch { /* ignore hook failures */ }
@@ -215,27 +247,29 @@ function copyEnvFiles(srcRepo: string, dstRepo: string): void {
 export interface PodUpOptions {
   cloneDb?: boolean;
   onLog?: (msg: string) => void;
+  waitForServices?: boolean;
 }
 
 export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlInfo[]> {
   const log = opts.onLog || (() => {});
-  const podDir = join(config.podsDir, name);
-  if (!existsSync(podDir)) {
-    throw new Error(`Pod '${name}' not found`);
-  }
+  const stackName = findPodStack(name);
+  const podDir = join(config.stackPodsDir(stackName), name);
+
+  const dockerDir = config.stackDockerDir(stackName);
+  const imageName = config.imageFor(stackName);
 
   requireDocker();
 
-  const composeFile = composeFileFor(name);
-  const project = composeProject(name);
+  const composeFile = composeFileFor(name, config.stackPodsDir(stackName));
+  const project = composeProject(name, stackName);
 
-  log(`Bringing up workspace for: ${name}`);
+  log(`Bringing up workspace for: ${name} (stack: ${stackName})`);
 
-  ensureImage(log);
+  ensureImage(log, stackName);
 
   // Offer to clone base database if pod's data volume is empty
   if (opts.cloneDb) {
-    const baseVol = "isopod-base-data";
+    const baseVol = `isopod-base-data-${stackName}`;
     const podVol = `${project}_data`;
 
     try {
@@ -257,7 +291,7 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
         try { execSync(`docker volume rm "${podVol}"`, { stdio: "ignore", timeout: 10000 }); } catch { /* OK */ }
         execSync(`docker volume create "${podVol}"`, { stdio: "ignore", timeout: 10000 });
         execSync(
-          `docker run --rm -v "${baseVol}":/from -v "${podVol}":/to "${config.workspaceImage}" bash -c "cp -a /from/. /to/"`,
+          `docker run --rm -v "${baseVol}":/from -v "${podVol}":/to "${imageName}" bash -c "cp -a /from/. /to/"`,
           { stdio: "pipe", timeout: 120000 }
         );
         log("Database cloned from base");
@@ -265,16 +299,16 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
     } catch { /* base volume doesn't exist, skip */ }
   }
 
-  generateCompose(name);
+  generateCompose(name, { stack: stackName });
 
   log("Starting container...");
   await composeUp(project, composeFile);
 
-  const container = workspaceContainer(name);
+  const container = workspaceContainer(name, stackName);
   await waitForContainer(container);
 
   // Run post-up hook
-  const postUpHook = join(config.dockerDir, "hooks", "post-up");
+  const postUpHook = join(dockerDir, "hooks", "post-up");
   if (existsSync(postUpHook)) {
     log("Running post-up hook...");
     try {
@@ -288,32 +322,32 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
           FEATURE_NAME: name,
           COMPOSE_FILE: composeFile,
           COMPOSE_PROJECT: project,
+          DOCKER_DIR: dockerDir,
         },
       });
     } catch { /* ignore hook failures */ }
   }
 
-  setupWorkspace(podDir, log);
+  setupWorkspace(podDir, log, dockerDir);
   log("Up complete");
 
-  return waitForUrls(name);
+  if (opts.waitForServices === false) return [];
+  return waitForUrls(name, undefined, dockerDir, log);
 }
 
 // ── Pod down ───────────────────────────────────────────────────────
 
 export function podDown(name: string, onLog?: (msg: string) => void): void {
   const log = onLog || (() => {});
-  const podDir = join(config.podsDir, name);
-  if (!existsSync(podDir)) {
-    throw new Error(`Pod '${name}' not found`);
-  }
+  const stackName = findPodStack(name);
+  const dockerDir = config.stackDockerDir(stackName);
 
   requireDocker();
-  teardownWorkspace(name);
+  teardownWorkspace(name, undefined, dockerDir);
   log(`Workspace '${name}' cleaned up`);
 
-  const composeFile = composeFileFor(name);
-  const project = composeProject(name);
+  const composeFile = composeFileFor(name, config.stackPodsDir(stackName));
+  const project = composeProject(name, stackName);
 
   log(`Stopping container for: ${name}...`);
   try {
@@ -328,8 +362,13 @@ export function podDown(name: string, onLog?: (msg: string) => void): void {
 // ── Remove pod ─────────────────────────────────────────────────────
 
 export function getRemoveWarnings(name: string): RemoveWarning[] {
-  const podDir = join(config.podsDir, name);
-  if (!existsSync(podDir)) return [];
+  let podDir: string;
+  try {
+    const stack = findPodStack(name);
+    podDir = join(config.stackPodsDir(stack), name);
+  } catch {
+    return [];
+  }
 
   const warnings: RemoveWarning[] = [];
 
@@ -386,17 +425,17 @@ export function getRemoveWarnings(name: string): RemoveWarning[] {
 
 export function removePod(name: string, onLog?: (msg: string) => void): void {
   const log = onLog || (() => {});
-  const podDir = join(config.podsDir, name);
-  if (!existsSync(podDir)) {
-    throw new Error(`Pod '${name}' not found at ${podDir}`);
-  }
+  const stackName = findPodStack(name);
+  const podDir = join(config.stackPodsDir(stackName), name);
+
+  const dockerDir = config.stackDockerDir(stackName);
 
   log(`Removing pod: ${name}`);
 
-  const composeFile = composeFileFor(name);
-  const project = composeProject(name);
+  const composeFile = composeFileFor(name, config.stackPodsDir(stackName));
+  const project = composeProject(name, stackName);
 
-  teardownWorkspace(name, { removing: true });
+  teardownWorkspace(name, { removing: true }, dockerDir);
 
   // Stop and remove container
   log("Stopping and removing container...");
@@ -430,13 +469,9 @@ export function podStatus(name?: string): string {
   requireDocker();
 
   if (name) {
-    const podDir = join(config.podsDir, name);
-    if (!existsSync(podDir)) {
-      throw new Error(`Pod '${name}' not found`);
-    }
-
-    const composeFile = composeFileFor(name);
-    const project = composeProject(name);
+    const stack = findPodStack(name);
+    const composeFile = composeFileFor(name, config.stackPodsDir(stack));
+    const project = composeProject(name, stack);
 
     try {
       return execSync(
@@ -449,25 +484,28 @@ export function podStatus(name?: string): string {
   }
 
   // Status for all pods
-  if (!existsSync(config.podsDir)) return "No pods.";
-
   const results: string[] = [];
-  for (const dir of listDirs(config.podsDir)) {
-    const composeFile = composeFileFor(dir);
-    const project = composeProject(dir);
+  for (const stack of config.listStacks()) {
+    const podsDir = config.stackPodsDir(stack);
+    if (!existsSync(podsDir)) continue;
 
-    let status: string;
-    try {
-      status = execSync(
-        `docker compose -p "${project}" -f "${composeFile}" ps --format "    {{.Service}}: {{.State}} ({{.Status}})"`,
-        { encoding: "utf-8", timeout: 10000 }
-      ).trim();
-    } catch {
-      status = "    Container not running";
+    for (const dir of listDirs(podsDir)) {
+      const composeFile = composeFileFor(dir, podsDir);
+      const project = composeProject(dir, stack);
+
+      let status: string;
+      try {
+        status = execSync(
+          `docker compose -p "${project}" -f "${composeFile}" ps --format "    {{.Service}}: {{.State}} ({{.Status}})"`,
+          { encoding: "utf-8", timeout: 10000 }
+        ).trim();
+      } catch {
+        status = "    Container not running";
+      }
+
+      results.push(`  ${dir}\n${status}`);
     }
-
-    results.push(`  ${dir}\n${status}`);
   }
 
-  return results.join("\n\n");
+  return results.length > 0 ? results.join("\n\n") : "No pods.";
 }

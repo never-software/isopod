@@ -1,9 +1,10 @@
 import { createResource, createSignal, For, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { fetchSettings, updateSettings } from "../../api";
+import { fetchSettings, updateSettings, fetchIndexer, indexerStart, indexerStop } from "../../api";
+import { createPolledResource } from "../../lib/poll";
 import type { ServicePort } from "../../types";
 
-export function SettingsOverview() {
+export function SettingsOverview(props: { stack?: string }) {
   const [settings, { refetch }] = createResource(fetchSettings, {
     initialValue: { autoStart: false, services: [] },
   });
@@ -11,6 +12,8 @@ export function SettingsOverview() {
   const [dirty, setDirty] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [autoStart, setAutoStart] = createSignal(false);
+  const [indexer, refetchIndexer] = createPolledResource(fetchIndexer, { running: false, pid: null });
+  const [indexerLoading, setIndexerLoading] = createSignal(false);
 
   // Sync from server when settings load
   const syncFromServer = () => {
@@ -45,6 +48,23 @@ export function SettingsOverview() {
     setDirty(true);
   }
 
+  async function toggleIndexer() {
+    setIndexerLoading(true);
+    try {
+      if (indexer()?.running) {
+        await indexerStop();
+      } else {
+        await indexerStart();
+      }
+      setTimeout(() => {
+        refetchIndexer();
+        setIndexerLoading(false);
+      }, 1000);
+    } catch {
+      setIndexerLoading(false);
+    }
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -72,28 +92,51 @@ export function SettingsOverview() {
         </Show>
       </div>
 
-      {/* Indexer section */}
-      <section class="mb-8">
-        <h3 class="text-sm font-medium text-zinc-400 mb-3">Indexer</h3>
-        <div class="border border-zinc-800 rounded-lg bg-zinc-900/50 p-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-sm text-zinc-200">Auto-start daemon</div>
-              <div class="text-xs text-zinc-500 mt-0.5">Start the indexer daemon when the dashboard opens</div>
+      {/* Indexer section — only in landing settings */}
+      <Show when={!props.stack}>
+        <section class="mb-8">
+          <h3 class="text-sm font-medium text-zinc-400 mb-3">Indexer</h3>
+          <div class="border border-zinc-800 rounded-lg bg-zinc-900/50 p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-sm text-zinc-200">Indexer</div>
+                <div class="text-xs text-zinc-500 mt-0.5">
+                  {indexer()?.running
+                    ? <span>Running <span class="font-mono text-zinc-600">PID {indexer()!.pid}</span></span>
+                    : "Stopped"}
+                </div>
+              </div>
+              <button
+                class={`px-2.5 py-1 text-xs rounded transition-colors disabled:opacity-50 ${
+                  indexer()?.running
+                    ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                    : "bg-emerald-900/50 text-emerald-400 hover:bg-emerald-900"
+                }`}
+                onClick={toggleIndexer}
+                disabled={indexerLoading()}
+              >
+                {indexerLoading() ? "..." : indexer()?.running ? "Stop" : "Start"}
+              </button>
             </div>
-            <button
-              class={`w-8 h-4 rounded-full relative transition-colors flex-shrink-0 ${
-                autoStart() ? "bg-emerald-600" : "bg-zinc-700"
-              }`}
-              onClick={toggleAutoStart}
-            >
-              <span class={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
-                autoStart() ? "left-4" : "left-0.5"
-              }`} />
-            </button>
+            <div class="flex items-center justify-between pt-3 border-t border-zinc-800">
+              <div>
+                <div class="text-sm text-zinc-200">Auto-start</div>
+                <div class="text-xs text-zinc-500 mt-0.5">Start the indexer when the dashboard opens</div>
+              </div>
+              <button
+                class={`w-8 h-4 rounded-full relative transition-colors flex-shrink-0 ${
+                  autoStart() ? "bg-emerald-600" : "bg-zinc-700"
+                }`}
+                onClick={toggleAutoStart}
+              >
+                <span class={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                  autoStart() ? "left-4" : "left-0.5"
+                }`} />
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </Show>
 
       {/* Services section */}
       <section>
@@ -148,7 +191,7 @@ export function SettingsOverview() {
                   </select>
                   <span class="flex-1 text-xs text-zinc-600 font-mono truncate">
                     {service.label && service.port
-                      ? `${service.protocol}://{pod}.orb.local:${service.port}`
+                      ? `${service.protocol}://ip-{stack}-{pod}.orb.local:${service.port}`
                       : ""}
                   </span>
                   <button

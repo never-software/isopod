@@ -1,5 +1,6 @@
-import { createResource, createSignal, For, Show } from "solid-js";
-import { fetchCache, deleteCacheLayer, destroyCache } from "../../api";
+import { createSignal, For, Show } from "solid-js";
+import { fetchCache, deleteCacheLayer, destroyCache, buildStack } from "../../api";
+import { createPolledKeyedResource } from "../../lib/poll";
 import type { LayerInfo } from "../../types";
 
 const STATUS_STYLES: Record<LayerInfo["status"], { dot: string; text: string }> = {
@@ -8,10 +9,36 @@ const STATUS_STYLES: Record<LayerInfo["status"], { dot: string; text: string }> 
   "not built": { dot: "bg-zinc-600", text: "text-zinc-500" },
 };
 
-export function CacheOverview() {
-  const [cache, { refetch }] = createResource(fetchCache);
+export function CacheOverview(props: { stack: string }) {
+  const [cache, refetch] = createPolledKeyedResource(() => props.stack, (s) => fetchCache(s));
   const [deleting, setDeleting] = createSignal<string | null>(null);
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
+  const [building, setBuilding] = createSignal(false);
+  const [buildLog, setBuildLog] = createSignal<string[]>([]);
+  const [buildError, setBuildError] = createSignal<string | null>(null);
+
+  let logEnd: HTMLDivElement | undefined;
+
+  function scrollLog() {
+    logEnd?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  async function handleBuild() {
+    setBuilding(true);
+    setBuildLog([]);
+    setBuildError(null);
+    try {
+      await buildStack(props.stack, (msg) => {
+        setBuildLog((prev) => [...prev, msg]);
+        scrollLog();
+      });
+      refetch();
+    } catch (e: any) {
+      setBuildError(e.message);
+    } finally {
+      setBuilding(false);
+    }
+  }
 
   function toggleExpand(name: string) {
     const next = new Set(expanded());
@@ -24,12 +51,12 @@ export function CacheOverview() {
     return expanded().has(name);
   }
 
+  const ready = () => cache.state === "ready" || cache.state === "refreshing";
   const isDAG = () => cache()?.isDAG ?? false;
 
   /** Build tree connector prefix for each layer in DAG mode */
   function treePrefix(layers: LayerInfo[]): Map<string, string> {
     const prefixes = new Map<string, string>();
-    // Group children by parent
     const childrenOf = new Map<string | undefined, LayerInfo[]>();
     for (const layer of layers) {
       const parent = layer.from;
@@ -65,7 +92,6 @@ export function CacheOverview() {
     const exp = expanded();
     const result: Row[] = [];
     if (isDAG()) {
-      // In DAG mode, emit layers in tree order (DFS) instead of flat order
       const childrenOf = new Map<string | undefined, LayerInfo[]>();
       for (const layer of layers) {
         const parent = layer.from;
@@ -104,8 +130,9 @@ export function CacheOverview() {
 
   async function handleInvalidate(layer: string) {
     setDeleting(layer);
+    const stack = props.stack;
     try {
-      await deleteCacheLayer(layer);
+      await deleteCacheLayer(layer, stack);
       refetch();
     } finally {
       setDeleting(null);
@@ -115,8 +142,9 @@ export function CacheOverview() {
   async function handleDestroy() {
     if (!confirm("Destroy cache? This removes the workspace image and all stored hashes.")) return;
     setDeleting("__destroy__");
+    const stack = props.stack;
     try {
-      await destroyCache();
+      await destroyCache(stack);
       refetch();
     } finally {
       setDeleting(null);
@@ -126,16 +154,56 @@ export function CacheOverview() {
   return (
     <div>
       <div class="flex items-center justify-between mb-6">
-        <h2 class="text-xl font-semibold">Cache Layers</h2>
+        <h2 class="text-xl font-semibold">Base Image</h2>
         <button
-          class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-          onClick={() => refetch()}
+          class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+          onClick={handleBuild}
+          disabled={building() || deleting() !== null}
         >
-          Refresh
+          {building() ? "Building..." : cache()?.image.exists ? "Rebuild" : "Build"}
         </button>
       </div>
 
-      <Show when={!cache.loading} fallback={
+      {/* Build output — always visible, above everything else */}
+      <Show when={building() || buildLog().length > 0 || buildError()}>
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+              Build Output
+              <Show when={building()}>
+                <span class="ml-2 text-cyan-400 animate-pulse">running</span>
+              </Show>
+            </h3>
+            <Show when={!building() && buildLog().length > 0}>
+              <button
+                class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                onClick={() => { setBuildLog([]); setBuildError(null); }}
+              >
+                Clear
+              </button>
+            </Show>
+          </div>
+          <div class="border border-zinc-800 rounded-lg bg-zinc-950 p-3 max-h-64 overflow-y-auto font-mono text-xs leading-5">
+            <Show when={buildLog().length > 0} fallback={
+              <Show when={building()}>
+                <div class="text-zinc-600 animate-pulse">Waiting for output...</div>
+              </Show>
+            }>
+              <For each={buildLog()}>
+                {(line) => <div class="text-zinc-400">{line}</div>}
+              </For>
+            </Show>
+            <div ref={logEnd} />
+          </div>
+          <Show when={buildError()}>
+            <div class="mt-2 border border-red-900/50 rounded-lg bg-red-950/30 p-3">
+              <p class="text-xs text-red-400">{buildError()}</p>
+            </div>
+          </Show>
+        </div>
+      </Show>
+
+      <Show when={ready()} fallback={
         <div class="text-sm text-zinc-500 animate-pulse">Loading cache info...</div>
       }>
         {/* Image info card */}
@@ -167,15 +235,17 @@ export function CacheOverview() {
 
         {/* Layer table */}
         <Show when={cache()?.layers && cache()!.layers.length > 0}>
-          <div class="flex justify-end mb-2">
-            <button
-              class="px-2.5 py-1 text-xs rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors disabled:opacity-50"
-              onClick={handleDestroy}
-              disabled={deleting() !== null}
-            >
-              {deleting() === "__destroy__" ? "Destroying..." : "Destroy All"}
-            </button>
-          </div>
+          <Show when={cache()?.image.exists}>
+            <div class="flex justify-end mb-2">
+              <button
+                class="px-2.5 py-1 text-xs rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors disabled:opacity-50"
+                onClick={handleDestroy}
+                disabled={deleting() !== null}
+              >
+                {deleting() === "__destroy__" ? "Destroying..." : "Destroy All"}
+              </button>
+            </div>
+          </Show>
           <div class="border border-zinc-800 rounded-lg overflow-hidden">
             <table class="w-full text-sm">
               <thead>
@@ -183,10 +253,9 @@ export function CacheOverview() {
                   <Show when={!isDAG()}>
                     <th class="text-left px-4 py-2.5 font-medium w-8">#</th>
                   </Show>
-                  <th class="text-left px-4 py-2.5 font-medium">Layer</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Cache Layers</th>
                   <th class="text-left px-4 py-2.5 font-medium">Status</th>
-                  <th class="text-left px-4 py-2.5 font-medium">Current</th>
-                  <th class="text-left px-4 py-2.5 font-medium">Stored</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Version</th>
                   <th class="w-16"></th>
                 </tr>
               </thead>
@@ -196,7 +265,7 @@ export function CacheOverview() {
                     if (row.kind === "content") {
                       return (
                         <tr class="bg-zinc-950">
-                          <td class="py-0" colspan={isDAG() ? 5 : 6}>
+                          <td class="py-0" colspan={isDAG() ? 4 : 5}>
                             <pre class="px-10 py-3 text-xs font-mono text-zinc-400 overflow-x-auto whitespace-pre-wrap">{row.layer.content.join("\n")}</pre>
                           </td>
                         </tr>
@@ -235,9 +304,8 @@ export function CacheOverview() {
                             <span class={`text-xs ${style.text}`}>{layer.status}</span>
                           </div>
                         </td>
-                        <td class="px-4 py-2.5 font-mono text-xs text-zinc-400">{layer.version}</td>
                         <td class="px-4 py-2.5 font-mono text-xs text-zinc-500">
-                          {layer.storedVersion || "\u2014"}
+                          {layer.status === "not built" ? "\u2014" : layer.version}
                         </td>
                         <td class="px-4 py-2.5 text-right">
                           <Show when={layer.status === "fresh"}>

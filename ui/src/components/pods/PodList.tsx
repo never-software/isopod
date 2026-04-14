@@ -10,7 +10,7 @@ interface LogEntry {
   error?: boolean;
 }
 
-export function PodList() {
+export function PodList(props: { stack?: string }) {
   const [pods, setPods] = createStore<Pod[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [actionPod, setActionPod] = createSignal<string | null>(null);
@@ -88,6 +88,21 @@ export function PodList() {
     }
   }
 
+  const filteredPods = () => {
+    if (!props.stack) return [...pods];
+    return pods.filter((p) => p.stack === props.stack);
+  };
+
+  const podsByStack = () => {
+    const groups = new Map<string, Pod[]>();
+    for (const pod of pods) {
+      const list = groups.get(pod.stack) || [];
+      list.push(pod);
+      groups.set(pod.stack, list);
+    }
+    return Array.from(groups.entries()).map(([stack, stackPods]) => ({ stack, pods: stackPods }));
+  };
+
   return (
     <div>
       <div class="flex items-center justify-between mb-6">
@@ -110,6 +125,7 @@ export function PodList() {
 
       <Show when={showWizard()}>
         <CreatePodWizard
+          stack={props.stack!}
           onClose={() => setShowWizard(false)}
           onCreated={refreshPods}
         />
@@ -120,22 +136,55 @@ export function PodList() {
           when={pods.length > 0}
           fallback={<EmptyState />}
         >
-          <div class="space-y-3">
-            <For each={pods}>
-              {(pod) => (
-                <PodCard
-                  pod={pod}
-                  services={settings()?.services || []}
-                  loading={actionPod() === pod.name}
-                  statusMessage={actionPod() === pod.name ? statusMessage() : null}
-                  error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
-                  onUp={() => handleAction(pod, "up")}
-                  onDown={() => handleAction(pod, "down")}
-                  onDelete={() => handleDelete(pod)}
-                />
-              )}
-            </For>
-          </div>
+          <Show
+            when={props.stack}
+            fallback={
+              /* Cross-stack mode: group pods by stack */
+              <div class="space-y-6">
+                <For each={podsByStack()}>
+                  {(group) => (
+                    <div>
+                      <h3 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">{group.stack}</h3>
+                      <div class="space-y-3">
+                        <For each={group.pods}>
+                          {(pod) => (
+                            <PodCard
+                              pod={pod}
+                              services={settings()?.services || []}
+                              loading={actionPod() === pod.name}
+                              statusMessage={actionPod() === pod.name ? statusMessage() : null}
+                              error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
+                              onUp={() => handleAction(pod, "up")}
+                              onDown={() => handleAction(pod, "down")}
+                              onDelete={() => handleDelete(pod)}
+                            />
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            }
+          >
+            {/* Stack-scoped mode: flat list */}
+            <div class="space-y-3">
+              <For each={filteredPods()}>
+                {(pod) => (
+                  <PodCard
+                    pod={pod}
+                    services={settings()?.services || []}
+                    loading={actionPod() === pod.name}
+                    statusMessage={actionPod() === pod.name ? statusMessage() : null}
+                    error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
+                    onUp={() => handleAction(pod, "up")}
+                    onDown={() => handleAction(pod, "down")}
+                    onDelete={() => handleDelete(pod)}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
         </Show>
       </Show>
 
@@ -223,6 +272,9 @@ function PodCard(props: {
             />
           </Show>
           <h3 class="font-medium">{props.pod.name}</h3>
+          <Show when={props.pod.stack}>
+            <span class="text-xs bg-violet-900/50 text-violet-400 px-1.5 py-0.5 rounded">{props.pod.stack}</span>
+          </Show>
         </div>
 
         <div class="flex items-center gap-2">
@@ -284,7 +336,7 @@ function PodCard(props: {
           <For each={props.services}>
             {(svc) => (
               <a
-                href={`${svc.protocol}://${props.pod.name}.orb.local:${svc.port}`}
+                href={`${svc.protocol}://ip-${props.pod.stack}-${props.pod.name}.orb.local:${svc.port}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 class="flex items-center gap-1 text-xs text-cyan-400/70 hover:text-cyan-300 transition-colors"

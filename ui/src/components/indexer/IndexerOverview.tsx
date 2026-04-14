@@ -1,55 +1,35 @@
-import { createResource, For, Show, createSignal, onCleanup } from "solid-js";
-import { fetchCollections, fetchBranches, fetchDaemon, fetchLogs, fetchWatchTargets, daemonStart, daemonStop, deleteCollectionApi, deleteBranchApi, deleteAllCollections, toggleWatchTarget, toggleWatchPod, fetchSettings, updateSettings } from "../../api";
+import { createSignal, For, Show } from "solid-js";
+import { fetchCollections, fetchBranches, fetchIndexer, fetchWatchTargets, deleteCollectionApi, deleteBranchApi, deleteAllCollections, toggleWatchTarget, toggleWatchPod } from "../../api";
+import { createPolledResource } from "../../lib/poll";
 import type { Collection, BranchInfo, WatchTarget } from "../../types";
 import { ActivityLog } from "./ActivityLog";
 
-export function IndexerOverview() {
-  const [collections, { refetch: refetchCollections }] = createResource(fetchCollections, { initialValue: [] });
-  const [branches, { refetch: refetchBranches }] = createResource(fetchBranches, { initialValue: [] });
-  const [daemon, { refetch: refetchDaemon }] = createResource(fetchDaemon, { initialValue: { running: false, pid: null } });
-  const [watchTargets, { refetch: refetchTargets }] = createResource(fetchWatchTargets, { initialValue: [] });
-  const [settings, { refetch: refetchSettings }] = createResource(fetchSettings, { initialValue: { autoStart: false } });
+export function IndexerOverview(props: { stack?: string }) {
+  const [collections, refetchCollections] = createPolledResource(fetchCollections, []);
+  const [branches, refetchBranches] = createPolledResource(fetchBranches, []);
+  const [indexer] = createPolledResource(fetchIndexer, { running: false, pid: null });
+  const [watchTargets, refetchTargets] = createPolledResource(fetchWatchTargets, []);
   const [tab, setTab] = createSignal<"collections" | "activity" | "targets">("collections");
-  const [daemonLoading, setDaemonLoading] = createSignal(false);
 
-  // Auto-refresh everything every 5s
-  const interval = setInterval(() => {
-    refetchDaemon();
-    refetchCollections();
-    refetchBranches();
-    refetchTargets();
-  }, 5000);
-  onCleanup(() => clearInterval(interval));
+  // Filter targets by stack when scoped
+  const filteredTargets = () => {
+    const all = watchTargets()!;
+    return props.stack ? all.filter((t) => t.stack === props.stack) : all;
+  };
+
+  // Derive which collections belong to current stack (via watch targets)
+  const stackCollectionNames = () => new Set(filteredTargets().map((t) => t.collectionName));
+  const filteredCollections = () => {
+    const all = collections()!;
+    if (!props.stack) return all;
+    const names = stackCollectionNames();
+    return all.filter((c) => names.has(c.name));
+  };
 
   // Derive stats
-  const totalPoints = () => collections()!.reduce((sum, c) => sum + c.points, 0);
+  const totalPoints = () => filteredCollections().reduce((sum, c) => sum + c.points, 0);
   const sortedCollections = () =>
-    [...collections()!].sort((a, b) => a.name.localeCompare(b.name));
-
-  async function toggleAutoStart() {
-    const current = settings()?.autoStart ?? false;
-    await updateSettings({ autoStart: !current });
-    refetchSettings();
-  }
-
-  async function toggleDaemon() {
-    setDaemonLoading(true);
-    try {
-      if (daemon()?.running) {
-        await daemonStop();
-      } else {
-        await daemonStart();
-      }
-      // Give the process a moment to start/stop
-      setTimeout(() => {
-        refetchDaemon();
-        setDaemonLoading(false);
-      }, 1000);
-    } catch (e) {
-      console.error(e);
-      setDaemonLoading(false);
-    }
-  }
+    [...filteredCollections()].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div class="flex flex-col flex-1 min-h-0">
@@ -57,17 +37,13 @@ export function IndexerOverview() {
 
       {/* Stats cards */}
       <div class="grid grid-cols-4 gap-3 mb-6">
-        <DaemonCard
-          running={daemon()?.running ?? false}
-          pid={daemon()?.pid ?? null}
-          loading={daemonLoading()}
-          onToggle={toggleDaemon}
-          autoStart={settings()?.autoStart ?? false}
-          onToggleAutoStart={toggleAutoStart}
+        <IndexerCard
+          running={indexer()?.running ?? false}
+          pid={indexer()?.pid ?? null}
         />
         <StatCard label="Collections" value={String(collections()!.length)} accent="cyan" />
         <StatCard label="Total Chunks" value={totalPoints().toLocaleString()} accent="cyan" />
-        <StatCard label="Watch Targets" value={`${watchTargets()!.filter(t => t.enabled).length} / ${watchTargets()!.length}`} accent="cyan" />
+        <StatCard label="Watch Targets" value={`${filteredTargets().filter(t => t.enabled).length} / ${filteredTargets().length}`} accent="cyan" />
       </div>
 
       {/* Tab navigation */}
@@ -87,46 +63,29 @@ export function IndexerOverview() {
       <div class="flex-1 min-h-0 flex flex-col overflow-auto">
         <Show when={tab() === "collections"}>
           <CollectionTable collections={sortedCollections()} onRefresh={refetchCollections} />
-          <BranchesSection branches={branches()!} loading={branches.loading} onRefresh={() => { refetchBranches(); refetchCollections(); }} />
+          <BranchesSection branches={branches()!} pending={branches.state === "pending"} onRefresh={() => { refetchBranches(); refetchCollections(); }} />
         </Show>
         <Show when={tab() === "activity"}>
           <ActivityLog />
         </Show>
         <Show when={tab() === "targets"}>
-          <WatchTargetsList targets={watchTargets()!} onRefresh={refetchTargets} />
+          <WatchTargetsList targets={filteredTargets()} showStack={!props.stack} onRefresh={refetchTargets} />
         </Show>
       </div>
     </div>
   );
 }
 
-function DaemonCard(props: { running: boolean; pid: number | null; loading: boolean; onToggle: () => void; autoStart: boolean; onToggleAutoStart: () => void }) {
+function IndexerCard(props: { running: boolean; pid: number | null }) {
   return (
     <div class="border border-zinc-800 rounded-lg bg-zinc-900/50 p-3">
-      <div class="flex items-center justify-between mb-1">
-        <div class="text-xs text-zinc-500">Daemon</div>
-        <button
-          class={`px-2 py-0.5 text-xs rounded transition-colors disabled:opacity-50 ${
-            props.running
-              ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-              : "bg-emerald-900/50 text-emerald-400 hover:bg-emerald-900"
-          }`}
-          onClick={props.onToggle}
-          disabled={props.loading}
-        >
-          {props.loading ? "..." : props.running ? "Stop" : "Start"}
-        </button>
-      </div>
+      <div class="text-xs text-zinc-500 mb-1">Indexer</div>
       <div class={`text-lg font-semibold ${props.running ? "text-emerald-400" : "text-zinc-400"}`}>
         {props.running ? "Running" : "Stopped"}
       </div>
       <Show when={props.pid}>
         <div class="text-xs text-zinc-600 font-mono mt-0.5">PID {props.pid}</div>
       </Show>
-      <div class="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800">
-        <span class="text-xs text-zinc-500">Start on boot</span>
-        <Toggle enabled={props.autoStart} onToggle={props.onToggleAutoStart} />
-      </div>
     </div>
   );
 }
@@ -233,7 +192,7 @@ function CollectionTable(props: { collections: Collection[]; onRefresh: () => vo
   );
 }
 
-function BranchesSection(props: { branches: BranchInfo[]; loading: boolean; onRefresh: () => void }) {
+function BranchesSection(props: { branches: BranchInfo[]; pending: boolean; onRefresh: () => void }) {
   const podBranches = () => props.branches.filter((b) => b.branch !== "base");
   const [deleting, setDeleting] = createSignal<string | null>(null);
 
@@ -250,7 +209,7 @@ function BranchesSection(props: { branches: BranchInfo[]; loading: boolean; onRe
   }
 
   return (
-    <Show when={!props.loading || podBranches().length > 0} fallback={
+    <Show when={!props.pending || podBranches().length > 0} fallback={
       <div class="mt-6">
         <div class="text-xs text-zinc-500 animate-pulse">Loading branches...</div>
       </div>
@@ -309,7 +268,7 @@ function BranchesSection(props: { branches: BranchInfo[]; loading: boolean; onRe
 }
 
 
-function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void }) {
+function WatchTargetsList(props: { targets: WatchTarget[]; showStack: boolean; onRefresh: () => void }) {
   const baseTargets = () => props.targets.filter((t) => !t.podName);
   const podTargets = () => props.targets.filter((t) => t.podName);
 
@@ -342,7 +301,7 @@ function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void
           </div>
           <div class="space-y-1">
             <For each={baseTargets()}>
-              {(t) => <TargetRow target={t} onToggle={() => handleToggle(t)} />}
+              {(t) => <TargetRow target={t} showStack={props.showStack} onToggle={() => handleToggle(t)} />}
             </For>
           </div>
         </div>
@@ -368,7 +327,7 @@ function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void
               <Show when={!noneEnabled()}>
                 <div class="space-y-1">
                   <For each={targets}>
-                    {(t) => <TargetRow target={t} onToggle={() => handleToggle(t)} />}
+                    {(t) => <TargetRow target={t} showStack={props.showStack} onToggle={() => handleToggle(t)} />}
                   </For>
                 </div>
               </Show>
@@ -384,12 +343,15 @@ function WatchTargetsList(props: { targets: WatchTarget[]; onRefresh: () => void
   );
 }
 
-function TargetRow(props: { target: WatchTarget; onToggle: () => void }) {
+function TargetRow(props: { target: WatchTarget; showStack: boolean; onToggle: () => void }) {
   return (
     <div class={`flex items-center justify-between text-xs border border-zinc-800 rounded px-3 py-2 transition-colors ${
       props.target.enabled ? "bg-zinc-900/50" : "bg-zinc-900/20 opacity-60"
     }`}>
       <div class="flex items-center gap-2">
+        <Show when={props.showStack}>
+          <span class="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{props.target.stack}</span>
+        </Show>
         <span class={`font-medium ${props.target.enabled ? "text-zinc-300" : "text-zinc-500"}`}>
           {props.target.repoName}
         </span>

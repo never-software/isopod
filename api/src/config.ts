@@ -1,7 +1,7 @@
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname, basename } from "path";
 import { fileURLToPath } from "url";
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const apiRoot = resolve(__dirname, "..");
@@ -9,7 +9,7 @@ const apiRoot = resolve(__dirname, "..");
 function findIsopodRoot(): string {
   let dir = apiRoot;
   for (let i = 0; i < 5; i++) {
-    if (existsSync(resolve(dir, "isopod")) && existsSync(resolve(dir, "repos"))) {
+    if (existsSync(resolve(dir, "isopod")) && (existsSync(resolve(dir, "stacks")) || existsSync(resolve(dir, "repos")))) {
       return dir;
     }
     dir = resolve(dir, "..");
@@ -44,15 +44,43 @@ loadEnv();
 
 export const config = {
   get isopodRoot() { return findIsopodRoot(); },
-  get reposDir() { return resolve(this.isopodRoot, "repos"); },
-  get podsDir() { return resolve(this.isopodRoot, "pods"); },
-  get dockerDir() {
-    const root = this.isopodRoot;
-    const localDir = resolve(root, "docker.local");
-    return existsSync(localDir) ? localDir : resolve(root, "docker");
-  },
   get projectName() { return basename(this.isopodRoot); },
-  get workspaceImage() { return `${this.projectName}-workspace`; },
+  get stacksDir() { return resolve(this.isopodRoot, "stacks"); },
+
+  stackRoot(stack: string): string {
+    return resolve(this.stacksDir, stack);
+  },
+
+  stackDockerDir(stack: string): string {
+    return resolve(this.stackRoot(stack), "docker.local");
+  },
+
+  stackReposDir(stack: string): string {
+    return resolve(this.stackRoot(stack), "repos");
+  },
+
+  stackPodsDir(stack: string): string {
+    return resolve(this.stackRoot(stack), "pods");
+  },
+
+  stackHomeTemplateDir(stack: string): string {
+    return resolve(this.stackRoot(stack), "pod_home_template");
+  },
+
+  stackWorkspaceTemplateDir(stack: string): string {
+    return resolve(this.stackRoot(stack), "pod_workspace_template");
+  },
+
+  imageFor(stack: string): string {
+    return `ipws-${stack}`;
+  },
+
+  listStacks(): string[] {
+    if (!existsSync(this.stacksDir)) return [];
+    return readdirSync(this.stacksDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && existsSync(resolve(this.stacksDir, e.name, "docker.local")))
+      .map(e => e.name);
+  },
 
   // Indexer env vars — lazy so help/non-indexer commands work without .env
   get qdrantUrl() { return requireEnv("QDRANT_URL"); },
@@ -80,9 +108,6 @@ export const config = {
 
   // Watcher
   debounceMs: 2000,
-
-  // Collection naming
-  collectionPrefix: "isopod",
 
   // Dashboard
   get dashboardPort() { return parseInt(process.env.DASHBOARD_PORT || "3141", 10); },

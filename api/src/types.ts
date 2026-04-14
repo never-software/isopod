@@ -14,6 +14,7 @@ export interface Pod {
   name: string;
   repos: PodRepo[];
   container: ContainerStatus;
+  stack: string;
 }
 
 // ── Repo types ──────────────────────────────────────────────────────
@@ -62,6 +63,7 @@ export interface WatchTarget {
   collectionName: string;
   branch: string;
   podName?: string;
+  stack: string;
   enabled: boolean;
 }
 
@@ -86,6 +88,7 @@ export interface SearchResult {
 }
 
 export interface SearchOptions {
+  stack: string;
   pod?: string;
   repo?: string;
   limit?: number;

@@ -1,4 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { execSync } from "child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync, truncateSync } from "fs";
 import { resolve, join, extname } from "path";
 import { config } from "./config.js";
@@ -7,6 +8,7 @@ import { discoverRepos } from "./repos.js";
 import { defaultBranchFor } from "./git.js";
 import { dbList } from "./db.js";
 import { cacheList, cacheDelete, cacheDestroy } from "./cache.js";
+import { buildAll } from "./docker.js";
 import { getStatus, deleteCollection, deleteBranch, getCollectionBranches, getAllBranches } from "./indexer/qdrant.js";
 import { discoverWatchTargets, startDaemon, stopDaemon, getDisabledTargets, toggleTarget, setDisabledTargets, targetKey } from "./indexer/watcher.js";
 
@@ -71,9 +73,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/watch-targets") return apiWatchTargets(res);
     if (path === "/api/watch-targets/disabled") return apiDisabledTargets(res);
     if (path === "/api/snapshots") return apiSnapshots(res);
-    if (path === "/api/repos") return apiRepos(res);
+    if (path === "/api/repos") return apiRepos(res, url);
+    if (path === "/api/stacks") return apiStacks(res);
     if (path === "/api/settings") return apiGetSettings(res);
-    if (path === "/api/cache") return apiCache(res);
+    if (path === "/api/cache") return apiCache(res, url);
 
     const branchesMatch = path.match(/^\/api\/collection\/(.+)\/branches$/);
     if (branchesMatch) return apiCollectionBranches(res, decodeURIComponent(branchesMatch[1]));
@@ -86,6 +89,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
 
     const warningsMatch = path.match(/^\/api\/pods\/(.+)\/warnings$/);
     if (warningsMatch) return apiPodWarnings(res, decodeURIComponent(warningsMatch[1]));
+
+    if (path === "/api/stacks/detail") return apiStacksDetail(res);
   }
 
   if (method === "POST") {
@@ -105,7 +110,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/collections/delete-all") return apiDeleteAllCollections(res);
     if (path === "/api/settings") return apiUpdateSettings(res, body);
     if (path === "/api/cache/delete") return apiCacheDelete(res, body);
-    if (path === "/api/cache/destroy") return apiCacheDestroy(res);
+    if (path === "/api/cache/destroy") return apiCacheDestroy(res, body);
+
+    const buildStackMatch = path.match(/^\/api\/stacks\/(.+)\/build$/);
+    if (buildStackMatch) return apiStackBuild(res, decodeURIComponent(buildStackMatch[1]));
 
     const deleteColMatch = path.match(/^\/api\/collection\/(.+)\/delete$/);
     if (deleteColMatch) return apiDeleteCollection(res, decodeURIComponent(deleteColMatch[1]));
@@ -322,12 +330,18 @@ async function apiCollectionBranches(res: ServerResponse, name: string): Promise
   }
 }
 
-function apiRepos(res: ServerResponse): void {
-  const repoNames = discoverRepos();
+function apiRepos(res: ServerResponse, url?: URL): void {
+  const stack = url?.searchParams.get("stack");
+  if (!stack) {
+    json(res, 400, { error: "Missing 'stack' query parameter" });
+    return;
+  }
+  const reposDir = config.stackReposDir(stack);
+  const repoNames = discoverRepos(reposDir);
   const repos = repoNames
-    .filter((name) => existsSync(join(config.reposDir, name, ".git")))
+    .filter((name) => existsSync(join(reposDir, name, ".git")))
     .map((name) => {
-      const repoPath = join(config.reposDir, name);
+      const repoPath = join(reposDir, name);
       const branch = defaultBranchFor(repoPath);
       return { name, defaultBranch: branch };
     });
@@ -336,19 +350,19 @@ function apiRepos(res: ServerResponse): void {
 }
 
 function apiPodExists(res: ServerResponse, name: string): void {
-  const podPath = resolve(config.podsDir, name);
-  if (!podPath.startsWith(config.podsDir)) {
-    json(res, 400, { error: "Invalid pod name" });
-    return;
-  }
   json(res, 200, { exists: podExists(name) });
 }
 
 async function apiCreatePod(res: ServerResponse, body: any): Promise<void> {
-  const { name, repos, from } = body;
+  const { name, repos, from, stack } = body;
 
   if (!name || typeof name !== "string" || !name.trim()) {
     json(res, 400, { error: "Pod name is required" });
+    return;
+  }
+
+  if (!stack || typeof stack !== "string") {
+    json(res, 400, { error: "Stack is required" });
     return;
   }
 
@@ -382,6 +396,7 @@ async function apiCreatePod(res: ServerResponse, body: any): Promise<void> {
     await createPod(name, {
       repos: repos && repos.length > 0 ? repos : undefined,
       from,
+      stack,
       onLog: (line: string) => sse("log", { line }),
     });
     sse("done", { success: true });
@@ -397,8 +412,18 @@ function apiSnapshots(res: ServerResponse): void {
   json(res, 200, snapshots);
 }
 
-function apiCache(res: ServerResponse): void {
-  const cache = cacheList();
+function apiStacks(res: ServerResponse): void {
+  const stacks = config.listStacks();
+  json(res, 200, stacks);
+}
+
+function apiCache(res: ServerResponse, url?: URL): void {
+  const stack = url?.searchParams.get("stack");
+  if (!stack) {
+    json(res, 400, { error: "Missing 'stack' query parameter" });
+    return;
+  }
+  const cache = cacheList(stack);
   json(res, 200, cache);
 }
 
@@ -407,23 +432,75 @@ function apiCacheDelete(res: ServerResponse, body: any): void {
     json(res, 400, { error: "Missing 'layer'" });
     return;
   }
+  if (!body.stack) {
+    json(res, 400, { error: "Missing 'stack'" });
+    return;
+  }
   try {
     const logs: string[] = [];
-    cacheDelete(body.layer, (msg) => logs.push(msg));
+    cacheDelete(body.layer, (msg) => logs.push(msg), body.stack);
     json(res, 200, { ok: true, logs });
   } catch (error: any) {
     json(res, 400, { error: error.message });
   }
 }
 
-function apiCacheDestroy(res: ServerResponse): void {
+function apiCacheDestroy(res: ServerResponse, body?: any): void {
+  if (!body?.stack) {
+    json(res, 400, { error: "Missing 'stack'" });
+    return;
+  }
   try {
     const logs: string[] = [];
-    cacheDestroy((msg) => logs.push(msg));
+    cacheDestroy((msg) => logs.push(msg), body.stack);
     json(res, 200, { ok: true, logs });
   } catch (error: any) {
     json(res, 500, { error: error.message });
   }
+}
+
+function apiStacksDetail(res: ServerResponse): void {
+  const stacks = config.listStacks();
+  const details = stacks.map((name) => {
+    const imageName = config.imageFor(name);
+    let image: { exists: boolean; name: string; sizeMB?: number; created?: string } = {
+      exists: false,
+      name: imageName,
+    };
+    try {
+      const sizeStr = execSync(
+        `docker image inspect "${imageName}" --format "{{.Size}}"`,
+        { encoding: "utf-8", timeout: 10000 }
+      ).trim();
+      const createdStr = execSync(
+        `docker image inspect "${imageName}" --format "{{.Created}}"`,
+        { encoding: "utf-8", timeout: 10000 }
+      ).trim();
+      image = {
+        exists: true,
+        name: imageName,
+        sizeMB: Math.round(parseInt(sizeStr, 10) / 1024 / 1024),
+        created: createdStr.split("T")[0],
+      };
+    } catch { /* image doesn't exist */ }
+    return { name, image };
+  });
+  json(res, 200, details);
+}
+
+async function apiStackBuild(res: ServerResponse, stackName: string): Promise<void> {
+  res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
+  try {
+    buildAll(
+      (msg) => res.write(JSON.stringify({ type: "log", message: msg }) + "\n"),
+      stackName,
+    );
+    res.write(JSON.stringify({ type: "done" }) + "\n");
+  } catch (error: any) {
+    const msg = error.stderr?.toString().trim() || error.message;
+    res.write(JSON.stringify({ type: "error", message: msg }) + "\n");
+  }
+  res.end();
 }
 
 async function apiPodUp(res: ServerResponse, podName: string): Promise<void> {
@@ -431,6 +508,7 @@ async function apiPodUp(res: ServerResponse, podName: string): Promise<void> {
   try {
     await podUp(podName, {
       onLog: (msg) => res.write(JSON.stringify({ type: "log", message: msg }) + "\n"),
+      waitForServices: false,
     });
     res.write(JSON.stringify({ type: "done" }) + "\n");
   } catch (error: any) {

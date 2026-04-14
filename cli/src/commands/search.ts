@@ -5,12 +5,14 @@ import { error } from "../output.js";
 export const searchCommand = new Command("search")
   .description("Search indexed code")
   .argument("<query>", "Search query")
+  .requiredOption("--stack <name>", "Stack to search")
   .option("--pod <name>", "Search within a pod (overlays on base)")
   .option("--repo <name>", "Limit to a specific repo")
   .option("-n, --limit <number>", "Number of results", "10")
-  .action(async (query: string, opts: { pod?: string; repo?: string; limit: string }) => {
+  .action(async (query: string, opts: { stack: string; pod?: string; repo?: string; limit: string }) => {
     try {
       const results = await search(query, {
+        stack: opts.stack,
         pod: opts.pod,
         repo: opts.repo,
         limit: parseInt(opts.limit, 10),

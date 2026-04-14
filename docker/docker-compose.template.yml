@@ -8,8 +8,8 @@
 services:
   workspace:
     image: __IMAGE_NAME__
-    container_name: __FEATURE_NAME__
-    hostname: __FEATURE_NAME__
+    container_name: __CONTAINER_NAME__
+    hostname: __CONTAINER_NAME__
     init: true
     environment:
       - TZ=UTC
@@ -17,6 +17,7 @@ services:
       - COLORTERM=truecolor
       - CLAUDE_CODE_NO_FLICKER=1
       - ISOPOD_REPOS=__REPO_LIST__
+      - STACK_NAME=__STACK_NAME__
       # Add your project-specific environment variables:
       # - PGUSER=postgres
       # - DATABASE_URL=postgres://localhost/myapp_dev

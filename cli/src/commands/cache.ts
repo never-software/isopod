@@ -61,9 +61,10 @@ export const cacheCommand = new Command("cache")
     new Command("list")
       .alias("ls")
       .description("Show all layers and their status")
-      .action(() => {
+      .requiredOption("--stack <name>", "Stack to inspect (default: docker.local)")
+      .action((opts: { stack?: string }) => {
         try {
-          const cache = cacheList();
+          const cache = cacheList(opts.stack);
 
           header("Cache layers");
 
@@ -95,9 +96,10 @@ export const cacheCommand = new Command("cache")
     new Command("rebuild")
       .description("Rebuild from a layer (cascades to later layers)")
       .argument("<layer>", "Layer name")
-      .action((layer: string) => {
+      .requiredOption("--stack <name>", "Stack to rebuild (default: docker.local)")
+      .action((layer: string, opts: { stack?: string }) => {
         try {
-          cacheRebuild(layer, (msg) => info(msg));
+          cacheRebuild(layer, (msg) => info(msg), opts.stack);
         } catch (err: any) {
           error(err.message);
         }
@@ -107,9 +109,10 @@ export const cacheCommand = new Command("cache")
     new Command("delete")
       .description("Mark a layer as stale")
       .argument("<layer>", "Layer name")
-      .action((layer: string) => {
+      .requiredOption("--stack <name>", "Stack to target (default: docker.local)")
+      .action((layer: string, opts: { stack?: string }) => {
         try {
-          cacheDelete(layer, (msg) => info(msg));
+          cacheDelete(layer, (msg) => info(msg), opts.stack);
         } catch (err: any) {
           error(err.message);
         }
@@ -118,9 +121,10 @@ export const cacheCommand = new Command("cache")
   .addCommand(
     new Command("destroy")
       .description("Remove workspace image and all cached hashes")
-      .action(() => {
+      .requiredOption("--stack <name>", "Stack to destroy (default: docker.local)")
+      .action((opts: { stack?: string }) => {
         try {
-          cacheDestroy((msg) => info(msg));
+          cacheDestroy((msg) => info(msg), opts.stack);
         } catch (err: any) {
           error(err.message);
         }

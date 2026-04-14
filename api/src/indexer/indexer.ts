@@ -20,17 +20,27 @@ import { hashContent } from "./utils.js";
 // ── Full base index ──────────────────────────────────────────────────
 
 export async function indexBase(repo?: string): Promise<void> {
-  const repos = repo ? [repo] : discoverLocalRepos();
+  type RepoTarget = { repoName: string; stack: string; repoPath: string };
+  let targets: RepoTarget[];
 
-  for (const repoName of repos) {
-    const repoPath = resolve(config.reposDir, repoName);
-    if (!existsSync(repoPath)) {
-      console.error(`Repo not found: ${repoPath}`);
-      continue;
+  if (repo) {
+    const found = findRepoPath(repo);
+    if (!found) {
+      console.error(`Repo not found: ${repo}`);
+      return;
     }
+    targets = [{ repoName: repo, stack: found.stack, repoPath: found.path }];
+  } else {
+    targets = discoverLocalRepos().map(({ repoName, stack }) => ({
+      repoName,
+      stack,
+      repoPath: resolve(config.stackReposDir(stack), repoName),
+    }));
+  }
 
+  for (const { repoName, stack, repoPath } of targets) {
     console.log(`\nIndexing base: ${repoName}`);
-    const collectionName = repoCollectionName(repoName);
+    const collectionName = repoCollectionName(stack, repoName);
     await ensureCollection(collectionName);
 
     const ig = createIgnoreFilter(repoPath);
@@ -77,11 +87,12 @@ export async function indexBase(repo?: string): Promise<void> {
 // ── Pod delta index ──────────────────────────────────────────────────
 
 export async function indexPod(podName: string): Promise<void> {
-  const podDir = resolve(config.podsDir, podName);
-  if (!existsSync(podDir)) {
-    console.error(`Pod not found: ${podDir}`);
+  const found = findPodDir(podName);
+  if (!found) {
+    console.error(`Pod not found: ${podName}`);
     return;
   }
+  const { dir: podDir, stack } = found;
 
   const repos = discoverPodRepos(podDir);
   console.log(`\nDelta indexing pod: ${podName} (repos: ${repos.join(", ")})`);
@@ -90,7 +101,7 @@ export async function indexPod(podName: string): Promise<void> {
 
   for (const repoName of repos) {
     const repoPath = resolve(podDir, repoName);
-    const collectionName = repoCollectionName(repoName);
+    const collectionName = repoCollectionName(stack, repoName);
     await ensureCollection(collectionName);
 
     const ig = createIgnoreFilter(repoPath);
@@ -161,8 +172,8 @@ export async function indexFile(
 export async function deletePodBranch(podName: string): Promise<void> {
   const repos = discoverLocalRepos();
   const branch = `pod-${podName}`;
-  for (const repo of repos) {
-    const col = repoCollectionName(repo);
+  for (const { repoName, stack } of repos) {
+    const col = repoCollectionName(stack, repoName);
     await deleteBranch(col, branch);
     console.log(`  Deleted branch ${branch} from collection: ${col}`);
   }
@@ -245,12 +256,34 @@ function walkFiles(
   return files;
 }
 
-function discoverLocalRepos(): string[] {
-  if (!existsSync(config.reposDir)) return [];
-  return readdirSync(config.reposDir).filter((name) => {
-    const gitDir = resolve(config.reposDir, name, ".git");
-    return existsSync(gitDir);
-  });
+function findRepoPath(repoName: string): { path: string; stack: string } | null {
+  for (const stack of config.listStacks()) {
+    const path = resolve(config.stackReposDir(stack), repoName);
+    if (existsSync(path)) return { path, stack };
+  }
+  return null;
+}
+
+function findPodDir(podName: string): { dir: string; stack: string } | null {
+  for (const stack of config.listStacks()) {
+    const path = resolve(config.stackPodsDir(stack), podName);
+    if (existsSync(path)) return { dir: path, stack };
+  }
+  return null;
+}
+
+function discoverLocalRepos(): { repoName: string; stack: string }[] {
+  const repos: { repoName: string; stack: string }[] = [];
+  for (const stack of config.listStacks()) {
+    const reposDir = config.stackReposDir(stack);
+    if (!existsSync(reposDir)) continue;
+    for (const name of readdirSync(reposDir)) {
+      if (existsSync(resolve(reposDir, name, ".git"))) {
+        repos.push({ repoName: name, stack });
+      }
+    }
+  }
+  return repos;
 }
 
 function discoverPodRepos(podDir: string): string[] {

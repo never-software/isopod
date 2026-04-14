@@ -124,6 +124,7 @@ export interface WatchTargetInfo {
   collectionName: string;
   branch: string;
   podName?: string;
+  stack: string;
 }
 
 export function targetKey(target: WatchTargetInfo): string {
@@ -137,33 +138,39 @@ interface RepoWatch extends WatchTargetInfo {
 export function discoverWatchTargets(): WatchTargetInfo[] {
   const targets: WatchTargetInfo[] = [];
 
-  if (existsSync(config.reposDir)) {
-    for (const name of listDirs(config.reposDir)) {
-      const repoPath = join(config.reposDir, name);
-      if (!existsSync(join(repoPath, ".git"))) continue;
-      targets.push({
-        repoName: name,
-        repoPath,
-        collectionName: repoCollectionName(name),
-        branch: "base",
-      });
-    }
-  }
-
-  if (existsSync(config.podsDir)) {
-    for (const podName of listDirs(config.podsDir)) {
-      const podDir = join(config.podsDir, podName);
-      for (const repoName of listDirs(podDir)) {
-        if (repoName.startsWith(".")) continue;
-        const repoPath = join(podDir, repoName);
+  for (const stack of config.listStacks()) {
+    const reposDir = config.stackReposDir(stack);
+    if (existsSync(reposDir)) {
+      for (const name of listDirs(reposDir)) {
+        const repoPath = join(reposDir, name);
         if (!existsSync(join(repoPath, ".git"))) continue;
         targets.push({
-          repoName,
+          repoName: name,
           repoPath,
-          collectionName: repoCollectionName(repoName),
-          branch: `pod-${podName}`,
-          podName,
+          collectionName: repoCollectionName(stack, name),
+          branch: "base",
+          stack,
         });
+      }
+    }
+
+    const podsDir = config.stackPodsDir(stack);
+    if (existsSync(podsDir)) {
+      for (const podName of listDirs(podsDir)) {
+        const podDir = join(podsDir, podName);
+        for (const repoName of listDirs(podDir)) {
+          if (repoName.startsWith(".")) continue;
+          const repoPath = join(podDir, repoName);
+          if (!existsSync(join(repoPath, ".git"))) continue;
+          targets.push({
+            repoName,
+            repoPath,
+            collectionName: repoCollectionName(stack, repoName),
+            branch: `pod-${podName}`,
+            podName,
+            stack,
+          });
+        }
       }
     }
   }
@@ -177,8 +184,7 @@ const POLL_INTERVAL = 5000;
 
 export async function startWatcher(): Promise<void> {
   console.log(`[${ts()}] Indexer watcher starting (git-poll mode)...`);
-  console.log(`  Repos: ${config.reposDir}`);
-  console.log(`  Pods:  ${config.podsDir}`);
+  console.log(`  Stacks: ${config.listStacks().join(", ")}`);
 
   let running = true;
   let processing = false;

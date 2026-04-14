@@ -1,13 +1,12 @@
 import { readdirSync, existsSync } from "fs";
 import { resolve } from "path";
-import { config } from "./config.js";
 
 /**
  * Discover all repo directories under repos/.
  * Returns directory names (not full paths).
  */
-export function discoverRepos(reposDir?: string): string[] {
-  const dir = reposDir || config.reposDir;
+export function discoverRepos(reposDir: string): string[] {
+  const dir = reposDir;
   if (!existsSync(dir)) return [];
 
   return readdirSync(dir, { withFileTypes: true })
@@ -19,8 +18,8 @@ export function discoverRepos(reposDir?: string): string[] {
  * Validate a repo name exists under repos/.
  * Returns the canonical name if found, null otherwise.
  */
-export function resolveRepo(name: string, reposDir?: string): string | null {
-  const dir = reposDir || config.reposDir;
+export function resolveRepo(name: string, reposDir: string): string | null {
+  const dir = reposDir;
   if (existsSync(resolve(dir, name))) {
     return name;
   }

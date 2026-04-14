@@ -17,33 +17,50 @@ export const infoCommand = new Command("info")
       // ── Pods & Containers
       header("Pods & Containers");
 
-      const allRepos = discoverRepos();
+      const stacks = config.listStacks();
+      const statuses = getContainerStatuses();
 
-      if (!existsSync(config.podsDir) || listDirs(config.podsDir).length === 0) {
-        console.log(`  ${dim("No pods.")}`);
-      } else {
-        const statuses = getContainerStatuses();
+      for (const stack of stacks) {
+        const podsDir = config.stackPodsDir(stack);
+        const reposDir = config.stackReposDir(stack);
+        const allRepos = discoverRepos(reposDir);
 
-        for (const name of listDirs(config.podsDir)) {
-          const podDir = join(config.podsDir, name);
-          const container = workspaceContainer(name);
-          const cstatus = statuses.get(name);
+        if (!existsSync(podsDir) || listDirs(podsDir).length === 0) {
+          console.log(`  ${dim(`No pods in stack '${stack}'.`)}`);
+        } else {
+          for (const name of listDirs(podsDir)) {
+            const podDir = join(podsDir, name);
+            const cstatus = statuses.get(name);
 
-          let statusText = cstatus ? cstatus.status : "no container";
-          let colorFn = dim;
-          if (statusText.includes("Up")) colorFn = green;
-          else if (statusText.includes("Exited") || statusText.includes("Created")) colorFn = yellow;
+            let statusText = cstatus ? cstatus.status : "no container";
+            let colorFn = dim;
+            if (statusText.includes("Up")) colorFn = green;
+            else if (statusText.includes("Exited") || statusText.includes("Created")) colorFn = yellow;
 
-          console.log(`  ${bold(name.padEnd(24))} ${colorFn(statusText)}`);
+            console.log(`  ${bold(name.padEnd(24))} ${colorFn(statusText)}`);
 
-          for (const repoName of allRepos) {
-            if (existsSync(join(podDir, repoName))) {
-              const branch = getCurrentBranch(join(podDir, repoName));
-              console.log(`    ${dim(repoName.padEnd(20))} ${branch}`);
+            for (const repoName of allRepos) {
+              if (existsSync(join(podDir, repoName))) {
+                const branch = getCurrentBranch(join(podDir, repoName));
+                console.log(`    ${dim(repoName.padEnd(20))} ${branch}`);
+              }
             }
           }
         }
       }
+
+      // ── Stacks
+      header("Stacks");
+      for (const stack of stacks) {
+        const imageName = config.imageFor(stack);
+        let imageStatus = dim("not built");
+        try {
+          execSync(`docker image inspect "${imageName}"`, { stdio: "ignore", timeout: 10000 });
+          imageStatus = green("built");
+        } catch { /* not built */ }
+        console.log(`  ${bold(stack.padEnd(24))} ${dim("image:")} ${imageName} (${imageStatus})`);
+      }
+      console.log();
 
       // ── Volumes
       header("Volumes");
@@ -96,10 +113,12 @@ export const infoCommand = new Command("info")
       // ── Cache
       header("Cache");
 
-      const cache = cacheList();
+      const firstStack = stacks[0];
+      const cache = firstStack ? cacheList(firstStack) : { image: { exists: false as const, name: "none" }, layers: [] as any[], isDAG: false };
 
-      if (cache.image.exists) {
-        console.log(`  ${bold("Image:")}  ${cache.image.name} (${cache.image.sizeMB}MB, built ${cache.image.created})`);
+      const img = cache.image;
+      if (img.exists && "sizeMB" in img) {
+        console.log(`  ${bold("Image:")}  ${img.name} (${img.sizeMB}MB, built ${img.created})`);
       } else {
         console.log(`  ${bold("Image:")}  not built`);
       }

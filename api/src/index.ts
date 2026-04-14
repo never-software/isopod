@@ -12,7 +12,7 @@ export { defaultBranchFor, getCurrentBranch, createRepoClone, getChangedFiles, g
 
 // Docker
 export {
-  requireDocker, composeProject, composeFileFor, workspaceContainer,
+  requireDocker, containerName, composeProject, composeFileFor, workspaceContainer,
   composeUp, waitForContainer, getContainerStatuses,
   buildImage, ensureImage, buildAll, fetchLatestMain, dockerCleanup,
 } from "./docker.js";
@@ -31,7 +31,7 @@ export {
 } from "./layers.js";
 
 // Pods
-export { listPods, podExists, validatePodName, createPod, podUp, podDown, removePod, getRemoveWarnings, podStatus } from "./pods.js";
+export { listPods, podExists, validatePodName, createPod, podUp, podDown, removePod, getRemoveWarnings, podStatus, findPodStack } from "./pods.js";
 
 // Database
 export { dbSave, dbRestore, dbList, dbDelete } from "./db.js";

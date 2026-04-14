@@ -2,7 +2,7 @@ import type {
   Pod,
   Collection,
   BranchInfo,
-  DaemonStatus,
+  IndexerStatus,
   WatchTarget,
   LogResponse,
   Snapshot,
@@ -71,9 +71,48 @@ export const podWarnings = (name: string) => get<RemoveWarning[]>(`/pods/${encod
 export const podRemove = (name: string, onProgress?: (msg: string) => void) =>
   streamAction(`/pods/${encodeURIComponent(name)}/remove`, onProgress);
 
+// ── Stacks ──────────────────────────────────────────────────────────
+
+export const fetchStacks = () => get<string[]>("/stacks");
+
+export interface StackDetail {
+  name: string;
+  image: {
+    exists: boolean;
+    name: string;
+    sizeMB?: number;
+    created?: string;
+  };
+}
+
+export const fetchStacksDetail = () => get<StackDetail[]>("/stacks/detail");
+
+export async function buildStack(name: string, onProgress?: (msg: string) => void): Promise<void> {
+  const res = await fetch(`${BASE}/stacks/${encodeURIComponent(name)}/build`, { method: "POST" });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop()!;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === "log" && onProgress) onProgress(event.message);
+      else if (event.type === "error") throw new Error(event.message);
+    }
+  }
+}
+
 // ── Repos ───────────────────────────────────────────────────────────
 
-export const fetchRepos = () => get<Repo[]>("/repos");
+export const fetchRepos = (stack: string) => get<Repo[]>(`/repos?stack=${encodeURIComponent(stack)}`);
 
 // ── Indexer ─────────────────────────────────────────────────────────
 
@@ -83,9 +122,9 @@ export const fetchCollectionBranches = (name: string) => get<BranchInfo[]>(`/col
 export const deleteCollectionApi = (name: string) => post<{ ok: boolean }>(`/collection/${encodeURIComponent(name)}/delete`);
 export const deleteBranchApi = (collection: string, branch: string) => post<{ ok: boolean }>(`/collection/${encodeURIComponent(collection)}/delete-branch`, { branch });
 export const deleteAllCollections = () => post<{ ok: boolean; deleted: number }>("/collections/delete-all");
-export const fetchDaemon = () => get<DaemonStatus>("/daemon");
-export const daemonStart = () => post<{ ok: boolean }>("/daemon/start");
-export const daemonStop = () => post<{ ok: boolean }>("/daemon/stop");
+export const fetchIndexer = () => get<IndexerStatus>("/daemon");
+export const indexerStart = () => post<{ ok: boolean }>("/daemon/start");
+export const indexerStop = () => post<{ ok: boolean }>("/daemon/stop");
 export const fetchLogs = (n = 100) => get<LogResponse>(`/logs?n=${n}`);
 export const clearLogs = () => post<{ ok: boolean }>("/logs/clear");
 export const fetchWatchTargets = () => get<WatchTarget[]>("/watch-targets");
@@ -100,9 +139,12 @@ export const updateSettings = (settings: Partial<Settings>) => post<Settings>("/
 
 // ── Cache ───────────────────────────────────────────────────────────
 
-export const fetchCache = () => get<CacheInfo>("/cache");
-export const deleteCacheLayer = (layer: string) => post<{ ok: boolean; logs: string[] }>("/cache/delete", { layer });
-export const destroyCache = () => post<{ ok: boolean; logs: string[] }>("/cache/destroy");
+export const fetchCache = (stack: string) =>
+  get<CacheInfo>(`/cache?stack=${encodeURIComponent(stack)}`);
+export const deleteCacheLayer = (layer: string, stack: string) =>
+  post<{ ok: boolean; logs: string[] }>("/cache/delete", { layer, stack });
+export const destroyCache = (stack: string) =>
+  post<{ ok: boolean; logs: string[] }>("/cache/destroy", { stack });
 
 // ── Database ────────────────────────────────────────────────────────
 

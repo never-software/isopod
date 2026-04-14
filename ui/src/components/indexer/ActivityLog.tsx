@@ -1,13 +1,10 @@
-import { createResource, createSignal, createEffect, For, Show, onCleanup, onMount } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount } from "solid-js";
 import { fetchLogs, clearLogs } from "../../api";
+import { createPolledResource } from "../../lib/poll";
 
 export function ActivityLog() {
   const [filter, setFilter] = createSignal("");
-  const [logs, { refetch }] = createResource(() => fetchLogs(500), { initialValue: { lines: [] } });
-
-  // Auto-refresh every 5 seconds
-  const interval = setInterval(() => refetch(), 5000);
-  onCleanup(() => clearInterval(interval));
+  const [logs, refetch] = createPolledResource(() => fetchLogs(500), { lines: [] });
 
   let scrollRef!: HTMLDivElement;
   const [latched, setLatched] = createSignal(true);

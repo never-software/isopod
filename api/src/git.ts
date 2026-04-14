@@ -1,6 +1,61 @@
-import { execSync } from "child_process";
-import { existsSync } from "fs";
-import { resolve } from "path";
+import { execSync, exec, execFile } from "child_process";
+import { existsSync, statSync } from "fs";
+import { mkdir, readdir } from "fs/promises";
+import { dirname, join, resolve } from "path";
+import { fileURLToPath } from "url";
+import { promisify } from "util";
+
+const execP = promisify(exec);
+const execFileP = promisify(execFile);
+const FETCH_MAX_AGE_MS = 2 * 60 * 1000;
+const CLONE_SKIP = new Set(["node_modules"]);
+
+// Resolve the bundled C helper. At runtime this file lives at api/dist/git.js,
+// and the source + compiled binary live at api/bin/{clone.c,clone}.
+const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cloneBinPath = join(apiRoot, "bin", "clone");
+const cloneSrcPath = join(apiRoot, "bin", "clone.c");
+
+let cloneHelperResolved: string | null | undefined;
+
+/**
+ * Returns the path to the compiled clonefile helper, compiling it on first use.
+ * Returns null when the platform doesn't support clonefile or compilation fails.
+ */
+async function ensureCloneHelper(): Promise<string | null> {
+  if (cloneHelperResolved !== undefined) return cloneHelperResolved;
+  if (process.platform !== "darwin" || !existsSync(cloneSrcPath)) {
+    cloneHelperResolved = null;
+    return null;
+  }
+  if (existsSync(cloneBinPath)) {
+    cloneHelperResolved = cloneBinPath;
+    return cloneBinPath;
+  }
+  try {
+    await execFileP("clang", ["-O2", "-o", cloneBinPath, cloneSrcPath], { timeout: 20000 });
+    cloneHelperResolved = cloneBinPath;
+    return cloneBinPath;
+  } catch {
+    cloneHelperResolved = null;
+    return null;
+  }
+}
+
+/**
+ * Copy a repo using APFS clonefile, cloning each top-level entry in parallel
+ * and skipping names in CLONE_SKIP. Throws on any failure so callers can fall back.
+ */
+async function fastClone(src: string, dst: string, helper: string): Promise<void> {
+  await mkdir(dst, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  const visible = entries.filter((e) => !CLONE_SKIP.has(e.name));
+  await Promise.all(
+    visible.map((entry) =>
+      execFileP(helper, [join(src, entry.name), join(dst, entry.name)], { timeout: 120000 }),
+    ),
+  );
+}
 
 // ── Branch detection ────────────────────────────────────────────────
 
@@ -54,34 +109,57 @@ export function getCurrentBranch(repoPath: string): string {
 
 /**
  * Create a local clone of a repo for a workspace, optionally branching from a base.
- * Uses rsync to copy (fast, preserves gitignored files like .env, handles symlinks).
+ * Uses APFS clonefile via a C helper on macOS, falling back to rsync elsewhere.
+ * Skips git fetch if the source was fetched within FETCH_MAX_AGE_MS.
  */
-export function createRepoClone(
+export async function createRepoClone(
   repoRoot: string,
   clonePath: string,
   branchName: string,
   startPoint?: string,
   onLog?: (msg: string) => void
-): void {
+): Promise<void> {
   const log = onLog || (() => {});
   const repoName = repoRoot.split("/").pop()!;
 
   log(`Copying ${repoName}...`);
-  try {
-    execSync(`rsync -a --exclude='node_modules' "${repoRoot}/" "${clonePath}/"`, {
-      timeout: 120000,
-      stdio: "pipe",
-    });
-  } catch {
-    throw new Error(`Failed to copy ${repoName}`);
+  const helper = await ensureCloneHelper();
+  let cloned = false;
+  if (helper) {
+    try {
+      await fastClone(repoRoot, clonePath, helper);
+      cloned = true;
+    } catch { /* fall through to rsync */ }
+  }
+  if (!cloned) {
+    try {
+      execSync(`rsync -a --exclude='node_modules' "${repoRoot}/" "${clonePath}/"`, {
+        timeout: 120000,
+        stdio: "pipe",
+      });
+    } catch {
+      throw new Error(`Failed to copy ${repoName}`);
+    }
   }
 
-  // Fetch the latest from origin
-  log(`Fetching latest from origin for ${repoName}...`);
+  // Fetch origin unless the source was fetched very recently.
+  let shouldFetch = true;
   try {
-    execSync("git fetch origin", { cwd: clonePath, stdio: "pipe", timeout: 30000 });
-  } catch {
-    log(`Failed to fetch origin for ${repoName}`);
+    const fetchHead = join(repoRoot, ".git", "FETCH_HEAD");
+    const ageMs = Date.now() - statSync(fetchHead).mtimeMs;
+    if (ageMs < FETCH_MAX_AGE_MS) {
+      shouldFetch = false;
+      log(`${repoName} already up-to-date (fetched ${Math.round(ageMs / 1000)}s ago)`);
+    }
+  } catch { /* no FETCH_HEAD — fall through and fetch */ }
+
+  if (shouldFetch) {
+    log(`Fetching latest from origin for ${repoName}...`);
+    try {
+      await execP("git fetch origin", { cwd: clonePath, timeout: 30000 });
+    } catch {
+      log(`Failed to fetch origin for ${repoName}`);
+    }
   }
 
   // Determine start point if not specified
@@ -97,33 +175,16 @@ export function createRepoClone(
   }
 
   // Create and checkout the feature branch
-  if (resolvedStartPoint) {
+  const checkoutCmd = resolvedStartPoint
+    ? `git checkout -b "${branchName}" "${resolvedStartPoint}"`
+    : `git checkout -b "${branchName}"`;
+  try {
+    await execP(checkoutCmd, { cwd: clonePath, timeout: 15000 });
+  } catch {
     try {
-      execSync(`git checkout -b "${branchName}" "${resolvedStartPoint}"`, {
-        cwd: clonePath, stdio: "pipe", timeout: 15000,
-      });
+      await execP(`git checkout "${branchName}"`, { cwd: clonePath, timeout: 15000 });
     } catch {
-      try {
-        execSync(`git checkout "${branchName}"`, {
-          cwd: clonePath, stdio: "pipe", timeout: 15000,
-        });
-      } catch {
-        throw new Error(`Failed to checkout ${branchName} in ${repoName}`);
-      }
-    }
-  } else {
-    try {
-      execSync(`git checkout -b "${branchName}"`, {
-        cwd: clonePath, stdio: "pipe", timeout: 15000,
-      });
-    } catch {
-      try {
-        execSync(`git checkout "${branchName}"`, {
-          cwd: clonePath, stdio: "pipe", timeout: 15000,
-        });
-      } catch {
-        throw new Error(`Failed to checkout ${branchName} in ${repoName}`);
-      }
+      throw new Error(`Failed to checkout ${branchName} in ${repoName}`);
     }
   }
 

@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { createHash } from "crypto";
-import { config } from "./config.js";
 
 // ── Internal types ─────────────────────────────────────────────────
 
@@ -13,8 +12,8 @@ export interface ParsedLayer {
 
 // ── Parse layers from Dockerfile ────────────────────────────────────
 
-function dockerfilePath(): string {
-  return join(config.dockerDir, "workspace.Dockerfile");
+function dockerfilePath(dockerDir?: string): string {
+  return join(dockerDir!, "workspace.Dockerfile");
 }
 
 const LAYER_RE = /^# layer: (\S+)(?:\s+\((.+)\))?$/;
@@ -36,8 +35,8 @@ function parseMetadata(raw: string): { from?: string; needs: string[] } {
   return result;
 }
 
-export function parseLayers(): ParsedLayer[] {
-  const dockerfile = dockerfilePath();
+export function parseLayers(dockerDir?: string): ParsedLayer[] {
+  const dockerfile = dockerfilePath(dockerDir);
   if (!existsSync(dockerfile)) return [];
 
   const content = readFileSync(dockerfile, "utf-8");
@@ -80,8 +79,8 @@ export function parseLayers(): ParsedLayer[] {
 
 // ── Graph construction ─────────────────────────────────────────────
 
-export function layerGraph(): Map<string, ParsedLayer> {
-  const parsed = parseLayers();
+export function layerGraph(dockerDir?: string): Map<string, ParsedLayer> {
+  const parsed = parseLayers(dockerDir);
   const graph = new Map<string, ParsedLayer>();
 
   const dag = parsed.some((l) => l.from !== undefined || l.needs.length > 0);
@@ -186,14 +185,14 @@ export function layerDepth(target: string, graph: Map<string, ParsedLayer>): num
 
 // ── Public API (backward-compatible) ───────────────────────────────
 
-export function layerNames(): string[] {
-  return parseLayers().map((l) => l.name);
+export function layerNames(dockerDir?: string): string[] {
+  return parseLayers(dockerDir).map((l) => l.name);
 }
 
 // ── Version/Hash Detection ──────────────────────────────────────────
 
-function layerLines(layer: string): string[] {
-  const dockerfile = dockerfilePath();
+function layerLines(layer: string, dockerDir?: string): string[] {
+  const dockerfile = dockerfilePath(dockerDir);
   if (!existsSync(dockerfile)) return [];
 
   const content = readFileSync(dockerfile, "utf-8");
@@ -218,12 +217,12 @@ function layerLines(layer: string): string[] {
   return result;
 }
 
-export function layerContent(layer: string): string[] {
-  return layerLines(layer).filter((l) => l.trim() !== "");
+export function layerContent(layer: string, dockerDir?: string): string[] {
+  return layerLines(layer, dockerDir).filter((l) => l.trim() !== "");
 }
 
-export function layerCurrentVersion(layer: string): string {
-  const lines = layerLines(layer);
+export function layerCurrentVersion(layer: string, dockerDir?: string): string {
+  const lines = layerLines(layer, dockerDir);
   if (lines.length === 0) return "unknown";
 
   return createHash("sha256")
@@ -234,42 +233,42 @@ export function layerCurrentVersion(layer: string): string {
 
 // ── Stored Hashes ──────────────────────────────────────────────────
 
-function hashDir(): string {
-  return join(config.dockerDir, ".cache-hashes");
+function hashDir(dockerDir?: string): string {
+  return join(dockerDir!, ".cache-hashes");
 }
 
-function hashFile(layer: string): string {
-  return join(hashDir(), `layer.${layer}`);
+function hashFile(layer: string, dockerDir?: string): string {
+  return join(hashDir(dockerDir), `layer.${layer}`);
 }
 
-export function layerStoredVersion(layer: string): string {
-  const file = hashFile(layer);
+export function layerStoredVersion(layer: string, dockerDir?: string): string {
+  const file = hashFile(layer, dockerDir);
   if (!existsSync(file)) return "";
   return readFileSync(file, "utf-8").trim();
 }
 
-export function layerSaveVersion(layer: string, version: string): void {
-  const dir = hashDir();
+export function layerSaveVersion(layer: string, version: string, dockerDir?: string): void {
+  const dir = hashDir(dockerDir);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `layer.${layer}`), version);
 }
 
-export function layerDeleteVersion(layer: string): void {
-  try { unlinkSync(hashFile(layer)); } catch { /* OK */ }
+export function layerDeleteVersion(layer: string, dockerDir?: string): void {
+  try { unlinkSync(hashFile(layer, dockerDir)); } catch { /* OK */ }
 }
 
-export function layersSaveAll(): void {
-  for (const layer of layerNames()) {
-    const version = layerCurrentVersion(layer);
-    layerSaveVersion(layer, version);
+export function layersSaveAll(dockerDir?: string): void {
+  for (const layer of layerNames(dockerDir)) {
+    const version = layerCurrentVersion(layer, dockerDir);
+    layerSaveVersion(layer, version, dockerDir);
   }
 }
 
 // ── Staleness ──────────────────────────────────────────────────────
 
-export function layerStatus(layer: string): "fresh" | "stale" | "not built" {
-  const stored = layerStoredVersion(layer);
-  const current = layerCurrentVersion(layer);
+export function layerStatus(layer: string, dockerDir?: string): "fresh" | "stale" | "not built" {
+  const stored = layerStoredVersion(layer, dockerDir);
+  const current = layerCurrentVersion(layer, dockerDir);
 
   if (!stored) return "not built";
   if (stored === current) return "fresh";
@@ -278,8 +277,8 @@ export function layerStatus(layer: string): "fresh" | "stale" | "not built" {
 
 // ── Cascade ────────────────────────────────────────────────────────
 
-export function layersFrom(target: string): string[] {
-  const graph = layerGraph();
+export function layersFrom(target: string, dockerDir?: string): string[] {
+  const graph = layerGraph(dockerDir);
   if (isDAGMode(graph)) {
     return [target, ...layerDependents(target, graph)];
   }
@@ -290,8 +289,8 @@ export function layersFrom(target: string): string[] {
   return names.slice(idx);
 }
 
-export function layersAfter(target: string): string[] {
-  const graph = layerGraph();
+export function layersAfter(target: string, dockerDir?: string): string[] {
+  const graph = layerGraph(dockerDir);
   if (isDAGMode(graph)) {
     return layerDependents(target, graph);
   }
@@ -302,6 +301,6 @@ export function layersAfter(target: string): string[] {
   return names.slice(idx + 1);
 }
 
-export function layerExists(target: string): boolean {
-  return layerNames().includes(target);
+export function layerExists(target: string, dockerDir?: string): boolean {
+  return layerNames(dockerDir).includes(target);
 }

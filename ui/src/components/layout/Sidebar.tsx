@@ -1,17 +1,28 @@
-import { createResource } from "solid-js";
-import type { View } from "../../types";
-import { fetchDaemon } from "../../api";
+import { createSignal, For, Show } from "solid-js";
+import type { NavState, LandingSubView, StackSubView } from "../../types";
+import { fetchIndexer, indexerStart, indexerStop } from "../../api";
+import { createPolledResource } from "../../lib/poll";
 
 interface Props {
-  current: View;
-  onNavigate: (view: View) => void;
+  navState: NavState;
+  onNavigate: (nav: NavState) => void;
+  stacks: string[];
 }
 
-const NAV_ITEMS: { view: View; label: string; icon: string }[] = [
+const LANDING_NAV: { view: LandingSubView; label: string; icon: string }[] = [
+  { view: "stacks", label: "Stacks", icon: "stack" },
+  { view: "base", label: "Bases", icon: "layers" },
   { view: "pods", label: "Pods", icon: "cube" },
-  { view: "indexer", label: "Indexer", icon: "chart" },
-  { view: "database", label: "Database", icon: "database" },
-  { view: "cache", label: "Cache", icon: "layers" },
+  { view: "indexes", label: "Indexes", icon: "chart" },
+  { view: "snapshots", label: "Data Snapshots", icon: "database" },
+  { view: "settings", label: "Settings", icon: "gear" },
+];
+
+const STACK_SUB_NAV: { view: StackSubView; label: string; icon: string }[] = [
+  { view: "base", label: "Base", icon: "layers" },
+  { view: "pods", label: "Pods", icon: "cube" },
+  { view: "indexes", label: "Indexes", icon: "chart" },
+  { view: "snapshots", label: "Data Snapshots", icon: "database" },
   { view: "settings", label: "Settings", icon: "gear" },
 ];
 
@@ -24,11 +35,6 @@ const ICONS: Record<string, () => any> = {
   chart: () => (
     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
       <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-    </svg>
-  ),
-  search: () => (
-    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
     </svg>
   ),
   layers: () => (
@@ -47,13 +53,30 @@ const ICONS: Record<string, () => any> = {
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   ),
+  stack: () => (
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7" />
+    </svg>
+  ),
 };
 
 export function Sidebar(props: Props) {
-  const [daemon, { refetch }] = createResource(fetchDaemon, { initialValue: { running: false, pid: null } });
+  const [indexer, refetch] = createPolledResource(fetchIndexer, { running: false, pid: null });
+  const [toggling, setToggling] = createSignal(false);
 
-  // Re-poll daemon status every 5s
-  setInterval(() => refetch(), 5000);
+  async function toggleIndexer() {
+    setToggling(true);
+    try {
+      if (indexer()?.running) await indexerStop();
+      else await indexerStart();
+      setTimeout(() => { refetch(); setToggling(false); }, 1000);
+    } catch { setToggling(false); }
+  }
+
+  const isStackMode = () => props.navState.mode === "stack";
+  const currentStack = () => isStackMode() ? (props.navState as { stack: string }).stack : null;
+  const currentSubView = () => props.navState.subView;
+  const currentLandingView = () => props.navState.mode === "landing" ? props.navState.subView : null;
 
   return (
     <aside class="w-56 border-r border-zinc-800 bg-zinc-900 flex flex-col">
@@ -64,35 +87,80 @@ export function Sidebar(props: Props) {
 
       {/* Navigation */}
       <nav class="flex-1 px-2 py-3 space-y-0.5">
-        {NAV_ITEMS.map((item) => (
+        <Show
+          when={isStackMode()}
+          fallback={
+            /* Landing mode: cross-stack nav */
+            <For each={LANDING_NAV}>
+              {(item) => (
+                <button
+                  class={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                    currentLandingView() === item.view
+                      ? "bg-zinc-800 text-zinc-100"
+                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+                  }`}
+                  onClick={() => props.onNavigate({ mode: "landing", subView: item.view })}
+                >
+                  {ICONS[item.icon]()}
+                  {item.label}
+                </button>
+              )}
+            </For>
+          }
+        >
+          {/* Stack-scoped mode: back button + sub-nav */}
           <button
-            class={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
-              props.current === item.view
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
-            }`}
-            onClick={() => props.onNavigate(item.view)}
+            class="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs text-zinc-500 hover:text-zinc-300 transition-colors mb-1"
+            onClick={() => props.onNavigate({ mode: "landing", subView: "stacks" })}
           >
-            {ICONS[item.icon]()}
-            {item.label}
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            All Stacks
           </button>
-        ))}
+          <div class="px-3 py-1.5 text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            {currentStack()}
+          </div>
+          <For each={STACK_SUB_NAV}>
+            {(item) => (
+              <button
+                class={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                  currentSubView() === item.view
+                    ? "bg-zinc-800 text-zinc-100"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+                }`}
+                onClick={() => props.onNavigate({ mode: "stack", stack: currentStack()!, subView: item.view })}
+              >
+                {ICONS[item.icon]()}
+                {item.label}
+              </button>
+            )}
+          </For>
+        </Show>
       </nav>
 
-      {/* Daemon status */}
+      {/* Indexer status */}
       <div class="px-4 py-3 border-t border-zinc-800">
         <div class="flex items-center gap-2 text-xs">
           <span
             class={`w-2 h-2 rounded-full ${
-              daemon()?.running ? "bg-emerald-500" : "bg-zinc-600"
+              indexer()?.running ? "bg-emerald-500" : "bg-zinc-600"
             }`}
           />
-          <span class="text-zinc-500">
-            Daemon {daemon()?.running ? `running` : "stopped"}
+          <span class="text-zinc-500 flex-1">
+            Indexer {indexer()?.running ? "running" : "stopped"}
           </span>
-          {daemon()?.pid && (
-            <span class="text-zinc-600 ml-auto font-mono">PID {daemon()!.pid}</span>
-          )}
+          <button
+            class={`px-1.5 py-0.5 text-xs rounded transition-colors disabled:opacity-50 ${
+              indexer()?.running
+                ? "text-zinc-500 hover:text-zinc-300"
+                : "text-emerald-500 hover:text-emerald-400"
+            }`}
+            onClick={toggleIndexer}
+            disabled={toggling()}
+          >
+            {toggling() ? "..." : indexer()?.running ? "Stop" : "Start"}
+          </button>
         </div>
       </div>
     </aside>

@@ -5,6 +5,7 @@ import type { Repo } from "../../types";
 type Step = "config" | "branch" | "create";
 
 interface Props {
+  stack: string;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -20,7 +21,7 @@ export function CreatePodWizard(props: Props) {
   const [done, setDone] = createSignal(false);
   const [error, setError] = createSignal("");
 
-  const [repos] = createResource(fetchRepos, { initialValue: [] });
+  const [repos] = createResource(() => props.stack, (s) => fetchRepos(s), { initialValue: [] });
 
   // Select all repos by default once loaded
   const reposLoaded = () => {
@@ -32,7 +33,7 @@ export function CreatePodWizard(props: Props) {
   const _ = () => { reposLoaded(); return true; };
 
   function toggleRepo(name: string) {
-    const s = new Set(selectedRepos());
+    const s = new Set<string>(selectedRepos());
     if (s.has(name)) s.delete(name);
     else s.add(name);
     setSelectedRepos(s);
@@ -40,9 +41,9 @@ export function CreatePodWizard(props: Props) {
 
   function toggleAll() {
     if (selectedRepos().size === repos()!.length) {
-      setSelectedRepos(new Set());
+      setSelectedRepos(new Set<string>());
     } else {
-      setSelectedRepos(new Set(repos()!.map((r) => r.name)));
+      setSelectedRepos(new Set<string>(repos()!.map((r) => r.name)));
     }
   }
 
@@ -77,6 +78,7 @@ export function CreatePodWizard(props: Props) {
       name: name().trim(),
       repos: Array.from(selectedRepos()),
       from: fromBranch().trim() || undefined,
+      stack: props.stack,
     });
 
     fetch("/api/pods/create", {
@@ -332,11 +334,11 @@ function CreateStep(props: {
     if (logContainer) logContainer.scrollTop = logContainer.scrollHeight;
   };
   // Scroll when logs change
-  const _ = () => { props.logs.length; setTimeout(scrollToBottom, 0); };
+  const _ = (): null => { props.logs.length; setTimeout(scrollToBottom, 0); return null; };
 
   return (
     <div class="space-y-3">
-      {_() && null}
+      {_()}
 
       <Show when={props.creating}>
         <div class="flex items-center gap-2 text-sm text-zinc-400">

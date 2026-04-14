@@ -15,14 +15,16 @@ export const nukeCommand = new Command("nuke")
 
       // Stop and remove all pod containers
       let containersRemoved = 0;
-      if (existsSync(config.podsDir)) {
-        for (const name of listDirs(config.podsDir)) {
-          const composeFile = composeFileFor(name);
-          const project = composeProject(name);
+      for (const stack of config.listStacks()) {
+        const podsDir = config.stackPodsDir(stack);
+        if (!existsSync(podsDir)) continue;
+        for (const name of listDirs(podsDir)) {
+          const composeFile = composeFileFor(name, podsDir);
+          const project = composeProject(name, stack);
 
           if (existsSync(composeFile)) {
             let actualProject = project;
-            const container = workspaceContainer(name);
+            const container = workspaceContainer(name, stack);
             try {
               const labelProject = execSync(
                 `docker inspect "${container}" --format '{{index .Config.Labels "com.docker.compose.project"}}'`,
@@ -87,29 +89,32 @@ export const nukeCommand = new Command("nuke")
         info("No isopod volumes to remove");
       }
 
-      // Destroy cache
-      try {
-        execSync(`docker image inspect "${config.workspaceImage}"`, { stdio: "ignore", timeout: 10000 });
-        info(`Removing workspace image: ${config.workspaceImage}`);
+      // Destroy cache per stack
+      for (const stack of config.listStacks()) {
+        const imageName = config.imageFor(stack);
         try {
-          execSync(`docker rmi "${config.workspaceImage}"`, { stdio: "pipe", timeout: 30000 });
+          execSync(`docker image inspect "${imageName}"`, { stdio: "ignore", timeout: 10000 });
+          info(`Removing workspace image: ${imageName}`);
+          try {
+            execSync(`docker rmi "${imageName}"`, { stdio: "pipe", timeout: 30000 });
+          } catch {
+            warn("Could not remove image (may be in use by running containers)");
+          }
         } catch {
-          warn("Could not remove image (may be in use by running containers)");
+          info(`No workspace image for stack '${stack}'`);
         }
-      } catch {
-        info("No workspace image to remove");
-      }
 
-      const cacheHashDir = join(config.dockerDir, ".cache-hashes");
-      if (existsSync(cacheHashDir)) {
-        info("Removing cached hashes");
-        execSync(`rm -rf "${cacheHashDir}"`, { timeout: 10000 });
+        const cacheHashDir = join(config.stackDockerDir(stack), ".cache-hashes");
+        if (existsSync(cacheHashDir)) {
+          info("Removing cached hashes");
+          execSync(`rm -rf "${cacheHashDir}"`, { timeout: 10000 });
+        }
       }
 
       try { execSync("docker image prune -f", { stdio: "pipe", timeout: 30000 }); } catch { /* ignore */ }
 
       console.log();
-      success(`Nuke complete. Pod directories preserved in ${config.podsDir}`);
+      success("Nuke complete. Pod directories preserved.");
       info("Run 'isopod build' to rebuild the workspace image");
       info("Run 'isopod up <name>' to restart a pod");
     } catch (err: any) {

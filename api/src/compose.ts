@@ -1,15 +1,21 @@
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "fs";
-import { join, resolve } from "path";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
+import { join } from "path";
 import { execSync } from "child_process";
 import { config } from "./config.js";
+import { containerName } from "./docker.js";
 
 /**
  * Generate (or regenerate) docker-compose.yml for a pod from the current template.
  * Detects repos from the pod directory automatically.
  */
-export function generateCompose(featureName: string): void {
-  const podDir = join(config.podsDir, featureName);
-  const dockerDir = config.dockerDir;
+export function generateCompose(
+  featureName: string,
+  opts: { stack: string },
+): void {
+  const { stack } = opts;
+  const podDir = join(config.stackPodsDir(stack), featureName);
+  const dockerDir = config.stackDockerDir(stack);
+  const imageName = config.imageFor(stack);
   const templateFile = join(dockerDir, "docker-compose.template.yml");
 
   // Detect repos from pod directory (directories with .git)
@@ -46,7 +52,7 @@ export function generateCompose(featureName: string): void {
 
   // Generate home template volume mounts
   let homeVolumes = "";
-  const homeTemplateDir = resolve(config.isopodRoot, "pod_home_template");
+  const homeTemplateDir = config.stackHomeTemplateDir(stack);
   if (existsSync(homeTemplateDir)) {
     for (const entry of readdirSync(homeTemplateDir, { withFileTypes: true })) {
       const itemPath = join(homeTemplateDir, entry.name);
@@ -58,7 +64,7 @@ export function generateCompose(featureName: string): void {
 
   // Generate workspace template volume mounts
   let workspaceTemplateVolumes = "";
-  const workspaceTemplateDir = resolve(config.isopodRoot, "pod_workspace_template");
+  const workspaceTemplateDir = config.stackWorkspaceTemplateDir(stack);
   if (existsSync(workspaceTemplateDir)) {
     for (const entry of readdirSync(workspaceTemplateDir, { withFileTypes: true })) {
       if (entry.name === ".gitkeep") continue;
@@ -80,9 +86,11 @@ export function generateCompose(featureName: string): void {
       if (line.includes("__HOME_TEMPLATE_VOLUMES__")) return homeVolumes;
       if (line.includes("__WORKSPACE_TEMPLATE_VOLUMES__")) return workspaceTemplateVolumes;
       return line
+        .replace(/__CONTAINER_NAME__/g, containerName(featureName, stack))
         .replace(/__FEATURE_NAME__/g, featureName)
+        .replace(/__STACK_NAME__/g, stack)
         .replace(/__DOCKER_DIR__/g, dockerDir)
-        .replace(/__IMAGE_NAME__/g, config.workspaceImage)
+        .replace(/__IMAGE_NAME__/g, imageName)
         .replace(/__REPO_LIST__/g, repoList);
     })
     .join("\n");
