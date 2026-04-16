@@ -122,6 +122,27 @@ export async function createRepoClone(
   const log = onLog || (() => {});
   const repoName = repoRoot.split("/").pop()!;
 
+  // Fetch origin in the source repo first, so the APFS clone inherits fresh refs.
+  // Skip if the source was fetched very recently.
+  let shouldFetch = true;
+  try {
+    const fetchHead = join(repoRoot, ".git", "FETCH_HEAD");
+    const ageMs = Date.now() - statSync(fetchHead).mtimeMs;
+    if (ageMs < FETCH_MAX_AGE_MS) {
+      shouldFetch = false;
+      log(`${repoName} already up-to-date (fetched ${Math.round(ageMs / 1000)}s ago)`);
+    }
+  } catch { /* no FETCH_HEAD — fall through and fetch */ }
+
+  if (shouldFetch) {
+    log(`Fetching latest from origin for ${repoName}...`);
+    try {
+      await execP("git fetch origin", { cwd: repoRoot, timeout: 30000 });
+    } catch {
+      log(`Failed to fetch origin for ${repoName}`);
+    }
+  }
+
   log(`Copying ${repoName}...`);
   const helper = await ensureCloneHelper();
   let cloned = false;
@@ -139,26 +160,6 @@ export async function createRepoClone(
       });
     } catch {
       throw new Error(`Failed to copy ${repoName}`);
-    }
-  }
-
-  // Fetch origin unless the source was fetched very recently.
-  let shouldFetch = true;
-  try {
-    const fetchHead = join(repoRoot, ".git", "FETCH_HEAD");
-    const ageMs = Date.now() - statSync(fetchHead).mtimeMs;
-    if (ageMs < FETCH_MAX_AGE_MS) {
-      shouldFetch = false;
-      log(`${repoName} already up-to-date (fetched ${Math.round(ageMs / 1000)}s ago)`);
-    }
-  } catch { /* no FETCH_HEAD — fall through and fetch */ }
-
-  if (shouldFetch) {
-    log(`Fetching latest from origin for ${repoName}...`);
-    try {
-      await execP("git fetch origin", { cwd: clonePath, timeout: 30000 });
-    } catch {
-      log(`Failed to fetch origin for ${repoName}`);
     }
   }
 
