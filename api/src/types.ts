@@ -28,6 +28,7 @@ export interface Repo {
 
 export interface Snapshot {
   name: string;
+  stack: string;
   volume: string;
   created: string;
 }

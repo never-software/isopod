@@ -97,9 +97,9 @@ export const cacheCommand = new Command("cache")
       .description("Rebuild from a layer (cascades to later layers)")
       .argument("<layer>", "Layer name")
       .requiredOption("--stack <name>", "Stack to rebuild (default: docker.local)")
-      .action((layer: string, opts: { stack?: string }) => {
+      .action(async (layer: string, opts: { stack?: string }) => {
         try {
-          cacheRebuild(layer, (msg) => info(msg), opts.stack);
+          await cacheRebuild(layer, (msg) => info(msg), opts.stack);
         } catch (err: any) {
           error(err.message);
         }

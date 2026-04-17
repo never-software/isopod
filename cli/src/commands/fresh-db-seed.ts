@@ -8,14 +8,14 @@ import { info, success, error } from "../output.js";
 export const freshDbSeedCommand = new Command("fresh-db-seed")
   .description("Rebuild image and reseed the base database volume")
   .requiredOption("--stack <name>", "Stack to seed")
-  .action((opts: { stack: string }) => {
+  .action(async (opts: { stack: string }) => {
     try {
       requireDocker();
-      buildAll((msg) => info(msg), opts.stack);
+      await buildAll((msg) => info(msg), opts.stack);
 
       const dockerDir = config.stackDockerDir(opts.stack);
       const imageName = config.imageFor(opts.stack);
-      const baseVol = `isopod-base-data-${opts.stack}`;
+      const baseVol = `ip-${opts.stack}-base_data`;
       const dbSeedHook = join(dockerDir, "hooks", "db-seed");
 
       if (!existsSync(dbSeedHook)) {

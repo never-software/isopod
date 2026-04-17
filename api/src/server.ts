@@ -525,7 +525,7 @@ function apiStacksDetail(res: ServerResponse): void {
 async function apiStackBuild(res: ServerResponse, stackName: string): Promise<void> {
   res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
   try {
-    buildAll(
+    await buildAll(
       (msg) => res.write(JSON.stringify({ type: "log", message: msg }) + "\n"),
       stackName,
     );

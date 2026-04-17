@@ -189,13 +189,15 @@ export async function createPod(name: string, opts: CreatePodOptions): Promise<v
           POD_DIR: podDir,
           FEATURE_NAME: name,
           DOCKER_DIR: dockerDir,
+          STACK: stack,
+          BASE_VOLUME: `ip-${stack}-base_data`,
         },
       });
     } catch { /* ignore hook failures */ }
   }
 
   // Step 4: Start container
-  await podUp(name, { cloneDb: true, onLog: log, waitForServices: false });
+  await podUp(name, { cloneDb: true, onLog: log, waitForServices: false, rebuildIfStale: true });
 
   // Step 5: Run post-create hook
   const postCreateHook = join(dockerDir, "hooks", "post-create");
@@ -248,6 +250,7 @@ export interface PodUpOptions {
   cloneDb?: boolean;
   onLog?: (msg: string) => void;
   waitForServices?: boolean;
+  rebuildIfStale?: boolean;
 }
 
 export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlInfo[]> {
@@ -265,11 +268,11 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
 
   log(`Bringing up workspace for: ${name} (stack: ${stackName})`);
 
-  ensureImage(log, stackName);
+  await ensureImage(log, stackName, opts.rebuildIfStale);
 
   // Offer to clone base database if pod's data volume is empty
   if (opts.cloneDb) {
-    const baseVol = `isopod-base-data-${stackName}`;
+    const baseVol = `ip-${stackName}-base_data`;
     const podVol = `${project}_data`;
 
     try {

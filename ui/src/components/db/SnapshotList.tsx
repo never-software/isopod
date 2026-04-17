@@ -7,7 +7,9 @@ interface Props {
 }
 
 export function SnapshotList(props: Props) {
-  const [snapshots, { refetch }] = createResource(fetchSnapshots, { initialValue: [] });
+  const [allSnapshots, { refetch }] = createResource(fetchSnapshots, { initialValue: [] });
+  const snapshots = () =>
+    (allSnapshots() || []).filter((s) => !props.stack || s.stack === props.stack);
   const [showModal, setShowModal] = createSignal(false);
 
   return (
@@ -30,11 +32,11 @@ export function SnapshotList(props: Props) {
         </div>
       </div>
 
-      <Show when={!snapshots.loading} fallback={
+      <Show when={!allSnapshots.loading} fallback={
         <div class="text-sm text-zinc-500 animate-pulse">Loading snapshots...</div>
       }>
         <Show
-          when={snapshots()!.length > 0}
+          when={snapshots().length > 0}
           fallback={
             <div class="text-sm text-zinc-500 border border-dashed border-zinc-800 rounded-lg p-8 text-center">
               No snapshots yet. Click <span class="text-zinc-300">Create Snapshot</span> to save one from a running pod.
@@ -45,6 +47,7 @@ export function SnapshotList(props: Props) {
             <table class="w-full text-sm">
               <thead>
                 <tr class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wider">
+                  <th class="text-left px-4 py-2.5 font-medium">Stack</th>
                   <th class="text-left px-4 py-2.5 font-medium">Name</th>
                   <th class="text-left px-4 py-2.5 font-medium">Volume</th>
                   <th class="text-right px-4 py-2.5 font-medium">Created</th>
@@ -54,6 +57,7 @@ export function SnapshotList(props: Props) {
                 <For each={snapshots()}>
                   {(snap) => (
                     <tr class="hover:bg-zinc-800/30 transition-colors">
+                      <td class="px-4 py-2.5 text-zinc-400 font-mono text-xs">{snap.stack}</td>
                       <td class="px-4 py-2.5 font-medium text-zinc-200">{snap.name}</td>
                       <td class="px-4 py-2.5 font-mono text-xs text-zinc-500">{snap.volume}</td>
                       <td class="px-4 py-2.5 text-right text-zinc-400">{snap.created}</td>

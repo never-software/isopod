@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import {
   requireDocker, config, discoverRepos, getCurrentBranch,
-  workspaceContainer, getContainerStatuses, cacheList, listDirs,
+  getContainerStatuses, cacheList, listDirs, dbList,
 } from "isopod-api";
 import { header, bold, dim, green, yellow, red } from "../output.js";
 
@@ -65,49 +65,47 @@ export const infoCommand = new Command("info")
       // ── Volumes
       header("Volumes");
 
-      try {
-        const podVols = execSync(
-          'docker volume ls --format "{{.Name}}" --filter "name=isopod-" 2>/dev/null',
-          { encoding: "utf-8", timeout: 10000 }
-        ).trim().split("\n").filter((v) => v.endsWith("_data"));
+      const ipVols = execSync(
+        'docker volume ls --format "{{.Name}}" --filter "name=ip-" 2>/dev/null',
+        { encoding: "utf-8", timeout: 10000 }
+      ).trim().split("\n").filter(Boolean);
 
-        const snapVols = execSync(
-          'docker volume ls --format "{{.Name}}" --filter "name=isopod-snap-" 2>/dev/null',
-          { encoding: "utf-8", timeout: 10000 }
-        ).trim().split("\n").filter(Boolean);
+      const baseVols = ipVols.filter((v) => /^ip-.+-base_data$/.test(v));
+      const podDataVols = ipVols.filter((v) => v.endsWith("_data") && !baseVols.includes(v));
+      const snapshots = dbList();
 
-        if (podVols.length === 0 && snapVols.length === 0) {
-          console.log(`  ${dim("No isopod volumes.")}`);
-        } else {
-          if (podVols.length > 0 && podVols[0]) {
-            console.log(`  ${bold("Pod data:")}`);
-            for (const vol of podVols) {
-              let created = "";
-              try {
-                created = execSync(`docker volume inspect --format "{{.CreatedAt}}" "${vol}"`, {
-                  encoding: "utf-8", timeout: 5000,
-                }).trim().split("T")[0];
-              } catch { /* ignore */ }
-              console.log(`    ${vol.padEnd(40)}  ${created}`);
-            }
-          }
+      const volCreated = (vol: string): string => {
+        try {
+          return execSync(`docker volume inspect --format "{{.CreatedAt}}" "${vol}"`, {
+            encoding: "utf-8", timeout: 5000,
+          }).trim().split("T")[0];
+        } catch {
+          return "";
+        }
+      };
 
-          if (snapVols.length > 0 && snapVols[0]) {
-            console.log(`  ${bold("Snapshots:")}`);
-            for (const vol of snapVols) {
-              const snapName = vol.replace(/^isopod-snap-/, "");
-              let created = "";
-              try {
-                created = execSync(`docker volume inspect --format "{{.CreatedAt}}" "${vol}"`, {
-                  encoding: "utf-8", timeout: 5000,
-                }).trim().split("T")[0];
-              } catch { /* ignore */ }
-              console.log(`    ${snapName.padEnd(40)}  ${created}`);
-            }
+      if (baseVols.length === 0 && podDataVols.length === 0 && snapshots.length === 0) {
+        console.log(`  ${dim("No isopod volumes.")}`);
+      } else {
+        if (baseVols.length > 0) {
+          console.log(`  ${bold("Base data:")}`);
+          for (const vol of baseVols) {
+            console.log(`    ${vol.padEnd(40)}  ${volCreated(vol)}`);
           }
         }
-      } catch {
-        console.log(`  ${dim("No isopod volumes.")}`);
+        if (podDataVols.length > 0) {
+          console.log(`  ${bold("Pod data:")}`);
+          for (const vol of podDataVols) {
+            console.log(`    ${vol.padEnd(40)}  ${volCreated(vol)}`);
+          }
+        }
+        if (snapshots.length > 0) {
+          console.log(`  ${bold("Snapshots:")}`);
+          for (const snap of snapshots) {
+            const label = `${snap.stack}/${snap.name}`;
+            console.log(`    ${label.padEnd(40)}  ${snap.created}`);
+          }
+        }
       }
 
       // ── Cache

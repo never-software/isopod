@@ -47,9 +47,9 @@ export const dbCommand = new Command("db")
           }
 
           header("Database snapshots");
-          console.log(`  ${bold("NAME".padEnd(30))}  ${bold("CREATED".padEnd(20))}`);
+          console.log(`  ${bold("STACK".padEnd(12))}  ${bold("NAME".padEnd(30))}  ${bold("CREATED".padEnd(20))}`);
           for (const snap of snapshots) {
-            console.log(`  ${snap.name.padEnd(30)}  ${snap.created.padEnd(20)}`);
+            console.log(`  ${snap.stack.padEnd(12)}  ${snap.name.padEnd(30)}  ${snap.created.padEnd(20)}`);
           }
           console.log();
         } catch (err: any) {
@@ -62,9 +62,10 @@ export const dbCommand = new Command("db")
       .alias("rm")
       .description("Delete a snapshot")
       .argument("<snapshot-name>", "Snapshot name")
-      .action((snapshot: string) => {
+      .option("--stack <name>", "Stack the snapshot belongs to (required if multiple stacks have the same snapshot name)")
+      .action((snapshot: string, opts: { stack?: string }) => {
         try {
-          dbDelete(snapshot, (msg) => info(msg));
+          dbDelete(snapshot, opts.stack, (msg) => info(msg));
         } catch (err: any) {
           error(err.message);
         }

@@ -57,26 +57,15 @@ export const nukeCommand = new Command("nuke")
       // Remove all isopod volumes
       let volumesRemoved = 0;
 
+      // All isopod volumes live under ip-<stack>-*: pod data (ends in _data),
+      // base data (ip-<stack>-base_data), and snapshots (bare ip-<stack>-<name>).
       try {
-        const dataVols = execSync(
-          'docker volume ls --format "{{.Name}}" --filter "name=isopod-"',
-          { encoding: "utf-8", timeout: 10000 }
-        ).trim().split("\n").filter((v) => v && v.endsWith("_data"));
-
-        for (const vol of dataVols) {
-          info(`Removing volume: ${vol}`);
-          try { execSync(`docker volume rm "${vol}"`, { stdio: "ignore", timeout: 10000 }); } catch { warn(`Could not remove ${vol} (may be in use)`); }
-          volumesRemoved++;
-        }
-      } catch { /* ignore */ }
-
-      try {
-        const snapVols = execSync(
-          'docker volume ls --format "{{.Name}}" --filter "name=isopod-snap-"',
+        const ipVols = execSync(
+          'docker volume ls --format "{{.Name}}" --filter "name=ip-"',
           { encoding: "utf-8", timeout: 10000 }
         ).trim().split("\n").filter(Boolean);
 
-        for (const vol of snapVols) {
+        for (const vol of ipVols) {
           info(`Removing volume: ${vol}`);
           try { execSync(`docker volume rm "${vol}"`, { stdio: "ignore", timeout: 10000 }); } catch { warn(`Could not remove ${vol} (may be in use)`); }
           volumesRemoved++;

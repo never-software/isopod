@@ -68,7 +68,7 @@ export function cacheList(stack?: string): CacheInfo {
   return { layers, image, isDAG: dag };
 }
 
-export function cacheRebuild(layer: string, onLog?: (msg: string) => void, stack?: string): void {
+export async function cacheRebuild(layer: string, onLog?: (msg: string) => void, stack?: string): Promise<void> {
   const log = onLog || (() => {});
   const dockerDir = config.stackDockerDir(stack!);
 
@@ -90,7 +90,7 @@ export function cacheRebuild(layer: string, onLog?: (msg: string) => void, stack
   }
 
   log(`Rebuilding workspace image from '${layer}'...`);
-  buildAll(log, stack);
+  await buildAll(log, stack);
   log("Rebuild complete. Run 'isopod up <name>' to apply to running pods.");
 }
 
@@ -103,7 +103,17 @@ export function cacheDelete(layer: string, onLog?: (msg: string) => void, stack?
   }
 
   layerDeleteVersion(layer, dockerDir);
+  pruneBuildKit(log);
   log(`Stored hash for '${layer}' deleted. Next build will treat it as stale.`);
+}
+
+function pruneBuildKit(log: (msg: string) => void): void {
+  log("Pruning Docker BuildKit cache...");
+  try {
+    execSync("docker builder prune -af", { stdio: "pipe", timeout: 120000 });
+  } catch {
+    log("Could not prune BuildKit cache (continuing)");
+  }
 }
 
 export function cacheDestroy(onLog?: (msg: string) => void, stack?: string): void {
@@ -135,6 +145,8 @@ export function cacheDestroy(onLog?: (msg: string) => void, stack?: string): voi
   try {
     execSync("docker image prune -f", { stdio: "pipe", timeout: 30000 });
   } catch { /* ignore */ }
+
+  pruneBuildKit(log);
 
   log("Cache destroyed. Run 'isopod build' to rebuild.");
 }

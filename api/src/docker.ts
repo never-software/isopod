@@ -1,9 +1,22 @@
-import { execFileSync, execSync, spawnSync } from "child_process";
+import { execFileSync, execSync, spawn } from "child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from "fs";
 import { resolve, join, relative } from "path";
+import type { Readable } from "stream";
 import { config } from "./config.js";
 import { defaultBranchFor } from "./git.js";
-import { layersSaveAll } from "./layers.js";
+import { layersSaveAll, layerGraph, layerStatus } from "./layers.js";
+
+function attachLineStream(stream: Readable | null, log: (msg: string) => void): () => void {
+  if (!stream) return () => {};
+  let remainder = "";
+  stream.on("data", (buf: Buffer) => {
+    const text = remainder + buf.toString();
+    const lines = text.split("\n");
+    remainder = lines.pop() ?? "";
+    for (const line of lines) if (line.length > 0) log(line);
+  });
+  return () => { if (remainder.length > 0) log(remainder); };
+}
 
 // ── Naming helpers ─────────────────────────────────────────────────
 
@@ -165,7 +178,7 @@ export function fetchLatestMain(onLog?: (msg: string) => void, stack?: string): 
   log("All repos on latest default branch");
 }
 
-function runCacheHooks(dockerDir: string, reposDir: string, imageName: string): string {
+function runCacheHooks(dockerDir: string, reposDir: string, imageName: string, stack: string): string {
   const cacheHooksDir = join(dockerDir, "cache-hooks");
   const allScript = join(cacheHooksDir, "all.sh");
 
@@ -181,6 +194,8 @@ function runCacheHooks(dockerDir: string, reposDir: string, imageName: string): 
         DOCKER_DIR: dockerDir,
         PROJECT_ROOT: config.isopodRoot,
         WORKSPACE_IMAGE: imageName,
+        STACK: stack,
+        BASE_VOLUME: `ip-${stack}-base_data`,
       },
     });
   } catch {
@@ -188,11 +203,11 @@ function runCacheHooks(dockerDir: string, reposDir: string, imageName: string): 
   }
 }
 
-function generateDockerfile(dockerDir: string, reposDir: string, imageName: string): string {
+function generateDockerfile(dockerDir: string, reposDir: string, imageName: string, stack: string): string {
   const dockerfile = join(dockerDir, "workspace.Dockerfile");
   const generated = resolve(config.isopodRoot, ".generated.Dockerfile");
 
-  const cacheInstructions = runCacheHooks(dockerDir, reposDir, imageName);
+  const cacheInstructions = runCacheHooks(dockerDir, reposDir, imageName, stack);
   let content = readFileSync(dockerfile, "utf-8");
 
   // Replace hardcoded docker.local/ references with the path relative to the stack root
@@ -214,7 +229,7 @@ function generateDockerfile(dockerDir: string, reposDir: string, imageName: stri
   return generated;
 }
 
-export function buildImage(onLog?: (msg: string) => void, stack?: string): void {
+export async function buildImage(onLog?: (msg: string) => void, stack?: string): Promise<void> {
   const log = onLog || (() => {});
   const s = stack!;
   const dockerDir = config.stackDockerDir(s);
@@ -223,42 +238,50 @@ export function buildImage(onLog?: (msg: string) => void, stack?: string): void 
   const buildScript = join(dockerDir, "build.sh");
 
   log("Generating Dockerfile from cache-hooks...");
-  const generatedDockerfile = generateDockerfile(dockerDir, reposDir, imageName);
+  const generatedDockerfile = generateDockerfile(dockerDir, reposDir, imageName, s);
 
   try {
     const cmd = existsSync(buildScript)
       ? { file: buildScript, args: [] as string[] }
       : { file: "docker", args: ["build", "-f", generatedDockerfile, "-t", imageName, config.stackRoot(s)] };
 
-    if (existsSync(buildScript)) {
-      log(`Building workspace image (stack: ${s}) (via build.sh)...`);
-    } else {
-      log(`Building workspace image (stack: ${s})...`);
-    }
+    log(existsSync(buildScript)
+      ? `Building workspace image (stack: ${s}) (via build.sh)...`
+      : `Building workspace image (stack: ${s})...`);
 
-    const result = spawnSync(cmd.file, cmd.args, {
-      timeout: 600000,
-      stdio: "pipe",
-      maxBuffer: 50 * 1024 * 1024,
-      env: existsSync(buildScript) ? {
-        ...process.env,
-        DOCKER_DIR: dockerDir,
-        PROJECT_ROOT: config.stackRoot(s),
-        WORKSPACE_IMAGE: imageName,
-        REPOS_DIR: reposDir,
-        GENERATED_DOCKERFILE: generatedDockerfile,
-      } : process.env,
+    await new Promise<void>((resolvePromise, reject) => {
+      const child = spawn(cmd.file, cmd.args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: existsSync(buildScript) ? {
+          ...process.env,
+          DOCKER_DIR: dockerDir,
+          PROJECT_ROOT: config.stackRoot(s),
+          WORKSPACE_IMAGE: imageName,
+          REPOS_DIR: reposDir,
+          GENERATED_DOCKERFILE: generatedDockerfile,
+        } : process.env,
+      });
+
+      const flushStdout = attachLineStream(child.stdout, log);
+      const flushStderr = attachLineStream(child.stderr, log);
+
+      const timeout = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error("Build timed out after 10 minutes"));
+      }, 600000);
+
+      child.once("error", (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+      child.once("close", (code) => {
+        clearTimeout(timeout);
+        flushStdout();
+        flushStderr();
+        if (code === 0) resolvePromise();
+        else reject(new Error(`Build failed (exit ${code})`));
+      });
     });
-
-    // Stream captured output through the log callback
-    const output = (result.stdout?.toString() || "") + (result.stderr?.toString() || "");
-    for (const line of output.split("\n")) {
-      if (line.trim()) log(line);
-    }
-
-    if (result.status !== 0) {
-      throw new Error(`Build failed (exit ${result.status})`);
-    }
   } finally {
     try { unlinkSync(generatedDockerfile); } catch { /* OK */ }
   }
@@ -268,23 +291,36 @@ export function buildImage(onLog?: (msg: string) => void, stack?: string): void 
   dockerCleanup(onLog);
 }
 
-export function ensureImage(onLog?: (msg: string) => void, stack?: string): void {
+export async function ensureImage(onLog?: (msg: string) => void, stack?: string, rebuildIfStale = false): Promise<void> {
   const s = stack!;
   const imageName = config.imageFor(s);
   const dockerDir = config.stackDockerDir(s);
+  let imageExists = false;
   try {
     execSync(`docker image inspect "${imageName}"`, { stdio: "ignore", timeout: 10000 });
-    // Run cache hooks to surface warnings
-    runCacheHooks(dockerDir, config.stackReposDir(s), imageName);
-  } catch {
+    imageExists = true;
+    runCacheHooks(dockerDir, config.stackReposDir(s), imageName, s);
+  } catch { /* image doesn't exist */ }
+
+  if (!imageExists) {
     onLog?.("Workspace image not found — building...");
-    buildAll(onLog, s);
+    await buildAll(onLog, s);
+    return;
+  }
+
+  if (rebuildIfStale) {
+    const graph = layerGraph(dockerDir);
+    const staleLayers = [...graph.keys()].filter(name => layerStatus(name, dockerDir) !== "fresh");
+    if (staleLayers.length > 0) {
+      onLog?.(`Stale layers detected (${staleLayers.join(", ")}) — rebuilding workspace image...`);
+      await buildAll(onLog, s);
+    }
   }
 }
 
-export function buildAll(onLog?: (msg: string) => void, stack?: string): void {
+export async function buildAll(onLog?: (msg: string) => void, stack?: string): Promise<void> {
   fetchLatestMain(onLog, stack);
-  buildImage(onLog, stack);
+  await buildImage(onLog, stack);
 }
 
 export function dockerCleanup(onLog?: (msg: string) => void): void {
