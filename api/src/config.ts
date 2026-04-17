@@ -63,12 +63,8 @@ export const config = {
     return resolve(this.stackRoot(stack), "pods");
   },
 
-  stackHomeTemplateDir(stack: string): string {
-    return resolve(this.stackRoot(stack), "pod_home_template");
-  },
-
   stackWorkspaceTemplateDir(stack: string): string {
-    return resolve(this.stackRoot(stack), "pod_workspace_template");
+    return resolve(this.stackRoot(stack), "workspace");
   },
 
   imageFor(stack: string): string {

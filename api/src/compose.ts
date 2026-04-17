@@ -50,28 +50,12 @@ export function generateCompose(
   }
   repoVolumes = repoVolumes.replace(/\n$/, "");
 
-  // Generate home template volume mounts
-  let homeVolumes = "";
-  const homeTemplateDir = config.stackHomeTemplateDir(stack);
-  if (existsSync(homeTemplateDir)) {
-    for (const entry of readdirSync(homeTemplateDir, { withFileTypes: true })) {
-      const itemPath = join(homeTemplateDir, entry.name);
-      homeVolumes += `      - ${itemPath}:/root/${entry.name}:delegated\n`;
-      homeVolumes += `      - ${itemPath}:/home/dev/${entry.name}:delegated\n`;
-    }
-    homeVolumes = homeVolumes.replace(/\n$/, "");
-  }
-
-  // Generate workspace template volume mounts
+  // Mount workspace/ directly as /workspace — the single shared dir across all pods
+  // Per-pod repos above override their specific subdirectories on top of this base mount
   let workspaceTemplateVolumes = "";
   const workspaceTemplateDir = config.stackWorkspaceTemplateDir(stack);
   if (existsSync(workspaceTemplateDir)) {
-    for (const entry of readdirSync(workspaceTemplateDir, { withFileTypes: true })) {
-      if (entry.name === ".gitkeep") continue;
-      const itemPath = join(workspaceTemplateDir, entry.name);
-      workspaceTemplateVolumes += `      - ${itemPath}:/workspace/${entry.name}:delegated\n`;
-    }
-    workspaceTemplateVolumes = workspaceTemplateVolumes.replace(/\n$/, "");
+    workspaceTemplateVolumes = `      - ${workspaceTemplateDir}:/workspace:delegated`;
   }
 
   // Read template and substitute
@@ -83,7 +67,6 @@ export function generateCompose(
     .split("\n")
     .map((line) => {
       if (line.includes("__REPO_VOLUMES__")) return repoVolumes;
-      if (line.includes("__HOME_TEMPLATE_VOLUMES__")) return homeVolumes;
       if (line.includes("__WORKSPACE_TEMPLATE_VOLUMES__")) return workspaceTemplateVolumes;
       return line
         .replace(/__CONTAINER_NAME__/g, containerName(featureName, stack))

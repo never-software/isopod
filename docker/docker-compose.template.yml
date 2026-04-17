@@ -30,12 +30,10 @@ services:
       - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
       # mkcert certificates (generate with: mkcert "*.orb.local" localhost 127.0.0.1)
       - __DOCKER_DIR__/certs:/certs:ro
+      # Shared workspace (workspace/) — live bind mount; per-pod repos overlay on top:
+__WORKSPACE_TEMPLATE_VOLUMES__
       # Repo bind mounts are injected here by isopod:
 __REPO_VOLUMES__
-      # Workspace template (pod_workspace_template/) — live bind mounts:
-__WORKSPACE_TEMPLATE_VOLUMES__
-      # Home template (pod_home_template/) — live bind mounts:
-__HOME_TEMPLATE_VOLUMES__
 
 volumes:
   data:
