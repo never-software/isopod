@@ -33,7 +33,7 @@ export const enterCommand = new Command("enter")
     }
 
     try {
-      execFileSync("docker", ["exec", "-it", "-w", "/workspace", container, shell], {
+      execFileSync("docker", ["exec", "-it", "-u", "dev", "-w", "/workspace", container, shell], {
         stdio: "inherit",
         timeout: 0,
       });

@@ -29,7 +29,7 @@ export const execCommand = new Command("exec")
     const ttyFlags = process.stdin.isTTY ? ["-it"] : ["-i"];
 
     try {
-      execFileSync("docker", ["exec", ...ttyFlags, "-w", opts.dir, container, ...command], {
+      execFileSync("docker", ["exec", ...ttyFlags, "-u", "dev", "-w", opts.dir, container, ...command], {
         stdio: "inherit",
         timeout: 0,
       });
