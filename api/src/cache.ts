@@ -11,6 +11,7 @@ import {
   layersFrom,
   layersAfter,
   layerDeleteVersion,
+  layerSaveBustToken,
   layerGraph,
   isDAGMode,
   layerDepth,
@@ -84,9 +85,11 @@ export async function cacheRebuild(layer: string, onLog?: (msg: string) => void,
     log(`Rebuilding '${layer}' will also rebuild: ${cascade.join(", ")}`);
   }
 
-  // Invalidate stored hashes from this layer onwards
+  // Invalidate stored hashes from this layer onwards and write cache-bust
+  // tokens so Docker rebuilds those layers without pruning unrelated cache.
   for (const l of layersFrom(layer, dockerDir)) {
     layerDeleteVersion(l, dockerDir);
+    layerSaveBustToken(l, dockerDir);
   }
 
   log(`Rebuilding workspace image from '${layer}'...`);
@@ -103,8 +106,8 @@ export function cacheDelete(layer: string, onLog?: (msg: string) => void, stack?
   }
 
   layerDeleteVersion(layer, dockerDir);
-  pruneBuildKit(log);
-  log(`Stored hash for '${layer}' deleted. Next build will treat it as stale.`);
+  layerSaveBustToken(layer, dockerDir);
+  log(`Stored hash for '${layer}' deleted. Next build will rebuild that layer without pruning unrelated cache.`);
 }
 
 function pruneBuildKit(log: (msg: string) => void): void {

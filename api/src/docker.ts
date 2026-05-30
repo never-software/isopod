@@ -4,7 +4,14 @@ import { resolve, join, relative } from "path";
 import type { Readable } from "stream";
 import { config } from "./config.js";
 import { defaultBranchFor } from "./git.js";
-import { layersSaveAll, layerGraph, layerStatus } from "./layers.js";
+import {
+  layersSaveAll,
+  layerGraph,
+  layerStatus,
+  layerBustTokens,
+  layerBustToken,
+  layerSaveBustToken,
+} from "./layers.js";
 
 function attachLineStream(stream: Readable | null, log: (msg: string) => void): () => void {
   if (!stream) return () => {};
@@ -203,10 +210,73 @@ function runCacheHooks(dockerDir: string, reposDir: string, imageName: string, s
   }
 }
 
+function cacheBustArgName(layer: string): string {
+  return `ISOPOD_CACHE_BUST_${layer.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
+function cacheBustInstructions(layer: string, token: string): string[] {
+  const argName = cacheBustArgName(layer);
+  return [
+    `ARG ${argName}=${token}`,
+    `RUN test -n "$${argName}"`,
+  ];
+}
+
+function injectCacheBusts(content: string, dockerDir: string): string {
+  const tokens = layerBustTokens(dockerDir);
+  if (tokens.size === 0) return content;
+
+  const lines = content.split("\n");
+  const result: string[] = [];
+  let pendingAfterFrom: string[] | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    result.push(line);
+
+    if (pendingAfterFrom && /^\s*FROM\b/i.test(line)) {
+      result.push(...pendingAfterFrom);
+      pendingAfterFrom = null;
+      continue;
+    }
+
+    const match = line.match(/^# layer: (\S+)/);
+    if (!match) continue;
+
+    const token = tokens.get(match[1]);
+    if (!token) continue;
+
+    const bustLines = cacheBustInstructions(match[1], token);
+    if (/^\s*FROM\b/i.test(lines[i + 1] ?? "")) {
+      pendingAfterFrom = bustLines;
+    } else {
+      result.push(...bustLines);
+    }
+  }
+
+  if (pendingAfterFrom) result.push(...pendingAfterFrom);
+  return result.join("\n");
+}
+
+function prepareCacheBustsForStaleLayers(dockerDir: string, imageName: string): void {
+  try {
+    execSync(`docker image inspect "${imageName}"`, { stdio: "ignore", timeout: 10000 });
+  } catch {
+    return;
+  }
+
+  for (const name of layerGraph(dockerDir).keys()) {
+    if (layerStatus(name, dockerDir) === "fresh") continue;
+    if (layerBustToken(name, dockerDir)) continue;
+    layerSaveBustToken(name, dockerDir);
+  }
+}
+
 function generateDockerfile(dockerDir: string, reposDir: string, imageName: string, stack: string): string {
   const dockerfile = join(dockerDir, "workspace.Dockerfile");
   const generated = resolve(config.isopodRoot, ".generated.Dockerfile");
 
+  prepareCacheBustsForStaleLayers(dockerDir, imageName);
   const cacheInstructions = runCacheHooks(dockerDir, reposDir, imageName, stack);
   let content = readFileSync(dockerfile, "utf-8");
 
@@ -217,6 +287,7 @@ function generateDockerfile(dockerDir: string, reposDir: string, imageName: stri
   if (relDockerDir !== "docker.local") {
     content = content.replace(/docker\.local\//g, relDockerDir + "/");
   }
+  content = injectCacheBusts(content, dockerDir);
 
   if (cacheInstructions) {
     const result = content.replace("__CACHE_HOOK_INSTRUCTIONS__", cacheInstructions);

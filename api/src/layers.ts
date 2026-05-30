@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 
 // ── Internal types ─────────────────────────────────────────────────
 
@@ -241,6 +241,10 @@ function hashFile(layer: string, dockerDir?: string): string {
   return join(hashDir(dockerDir), `layer.${layer}`);
 }
 
+function bustFile(layer: string, dockerDir?: string): string {
+  return join(hashDir(dockerDir), `bust.${layer}`);
+}
+
 export function layerStoredVersion(layer: string, dockerDir?: string): string {
   const file = hashFile(layer, dockerDir);
   if (!existsSync(file)) return "";
@@ -255,6 +259,29 @@ export function layerSaveVersion(layer: string, version: string, dockerDir?: str
 
 export function layerDeleteVersion(layer: string, dockerDir?: string): void {
   try { unlinkSync(hashFile(layer, dockerDir)); } catch { /* OK */ }
+}
+
+export function layerBustToken(layer: string, dockerDir?: string): string {
+  const file = bustFile(layer, dockerDir);
+  if (!existsSync(file)) return "";
+  return readFileSync(file, "utf-8").trim();
+}
+
+export function layerSaveBustToken(layer: string, dockerDir?: string): string {
+  const dir = hashDir(dockerDir);
+  mkdirSync(dir, { recursive: true });
+  const token = randomUUID().replace(/-/g, "");
+  writeFileSync(bustFile(layer, dockerDir), token);
+  return token;
+}
+
+export function layerBustTokens(dockerDir?: string): Map<string, string> {
+  const tokens = new Map<string, string>();
+  for (const layer of layerNames(dockerDir)) {
+    const token = layerBustToken(layer, dockerDir);
+    if (token) tokens.set(layer, token);
+  }
+  return tokens;
 }
 
 export function layersSaveAll(dockerDir?: string): void {
