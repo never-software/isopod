@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+
+HOST="ip-orri-${FEATURE_NAME}.orb.local"
+
+printf "IDE\thttps://${HOST}:8443\n"
+printf "API dev\thttp://${HOST}:3000\n"
+printf "API CI\thttp://${HOST}:3001\n"
+printf "Hub\thttp://${HOST}:5200\n"
+printf "MyOrri\thttp://${HOST}:5201\n"

@@ -1,0 +1,133 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Rails (dev): start",
+      "type": "shell",
+      "command": "rm -f /workspace/api/tmp/pids/server.pid; cd /workspace/api && bundle exec rails server -b 0.0.0.0 -p 3000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Rails (dev): stop",
+      "type": "shell",
+      "command": "pkill -f '[p]uma.*3000' && echo 'Stopped Rails (dev)' || echo 'Not running'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Rails (dev): restart",
+      "type": "shell",
+      "command": "pkill -f '[p]uma.*3000' 2>/dev/null; sleep 1; rm -f /workspace/api/tmp/pids/server.pid; cd /workspace/api && bundle exec rails server -b 0.0.0.0 -p 3000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Rails (CI): start",
+      "type": "shell",
+      "command": "rm -f /workspace/api/tmp/pids/server-ci.pid; cd /workspace/api && RAILS_ENV=ci bundle exec rails server -b 0.0.0.0 -p 3001 -P /workspace/api/tmp/pids/server-ci.pid",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Rails (CI): stop",
+      "type": "shell",
+      "command": "pkill -f '[p]uma.*3001' && echo 'Stopped Rails (CI)' || echo 'Not running'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Rails (CI): restart",
+      "type": "shell",
+      "command": "pkill -f '[p]uma.*3001' 2>/dev/null; sleep 1; rm -f /workspace/api/tmp/pids/server-ci.pid; cd /workspace/api && RAILS_ENV=ci bundle exec rails server -b 0.0.0.0 -p 3001 -P /workspace/api/tmp/pids/server-ci.pid",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Vite (hub): start",
+      "type": "shell",
+      "command": "cd /workspace/frontend && npx nx run hub:dev -- --host 0.0.0.0 --port 5200",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Vite (hub): stop",
+      "type": "shell",
+      "command": "pkill -f '[v]ite.*5200' && echo 'Stopped Vite (hub)' || echo 'Not running'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Vite (hub): restart",
+      "type": "shell",
+      "command": "pkill -f '[v]ite.*5200' 2>/dev/null; sleep 1; cd /workspace/frontend && npx nx run hub:dev -- --host 0.0.0.0 --port 5200",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Vite (my-orri): start",
+      "type": "shell",
+      "command": "cd /workspace/frontend && npx nx run my-orri:dev -- --host 0.0.0.0 --port 5201",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Vite (my-orri): stop",
+      "type": "shell",
+      "command": "pkill -f '[v]ite.*5201' && echo 'Stopped Vite (my-orri)' || echo 'Not running'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Vite (my-orri): restart",
+      "type": "shell",
+      "command": "pkill -f '[v]ite.*5201' 2>/dev/null; sleep 1; cd /workspace/frontend && npx nx run my-orri:dev -- --host 0.0.0.0 --port 5201",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "services",
+        "showReuseMessage": false
+      }
+    }
+  ]
+}

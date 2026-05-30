@@ -1,0 +1,61 @@
+# docker-compose.template.yml — Per-pod container stack (unified)
+#
+# Single container with PostgreSQL, Redis, and all application services.
+# Substitutions at generation time:
+#   __FEATURE_NAME__  → the pod's feature name (e.g. calendar-filters)
+#   __DOCKER_DIR__    → absolute path to docker/ directory
+#
+# Access via OrbStack DNS (no port mapping needed):
+#   http://ip-orri-<feature>.orb.local:3000  (Rails API, development)
+#   http://ip-orri-<feature>.orb.local:3001  (Rails API, CI)
+#   http://ip-orri-<feature>.orb.local:5200  (Hub)
+#   http://ip-orri-<feature>.orb.local:5201  (MyOrri)
+#
+# Usage:
+#   docker compose -p wt-<feature> up -d
+
+services:
+  workspace:
+    env_file:
+      - __DOCKER_DIR__/.env
+    image: __IMAGE_NAME__
+    container_name: __CONTAINER_NAME__
+    hostname: __CONTAINER_NAME__
+    ipc: host
+    init: true
+    shm_size: 4gb
+    environment:
+      # No DATABASE_URL — Rails uses config/database.yml for dev/test DB names
+      - PGUSER=postgres
+      - REDIS_URL=redis://localhost:6379/0
+      - REDIS_FOR_RAILS_CACHE_URL=redis://localhost:6379/1
+      - NODE_ENV=development
+      - CI=true
+      - E2E_API_URL=http://localhost:3001
+      - TZ=Europe/London
+      - TERM=xterm-256color
+      - COLORTERM=truecolor
+      - DD_TRACE_ENABLED=false
+      - SSH_AUTH_SOCK=/ssh-agent
+      - ISOPOD_REPOS=__REPO_LIST__
+      - STACK_NAME=__STACK_NAME__
+      - BUNDLE_GEM__FURY__IO=${BUNDLE_GEM__FURY__IO}
+      - BUNDLE_GITHUB__COM=${BUNDLE_GITHUB__COM}
+    volumes:
+      - data:/pgdata
+      - ${SSH_AUTH_SOCK}:/ssh-agent
+      - __DOCKER_DIR__/code-server:/home/dev/.local/share/code-server/User:delegated
+      - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
+      - __DOCKER_DIR__/workspace-start.sh:/usr/local/bin/workspace-start.sh:ro
+      - __DOCKER_DIR__/certs:/certs:ro
+      - __DOCKER_DIR__/extensions/startup-terminals/startup-terminals-1.0.0.vsix:/tmp/startup-terminals.vsix:ro
+      # Per-stack SSH identities + git URL aliases. Materialized into /home/dev
+      # at startup with correct perms (StrictModes refuses host-side ownership).
+      - __DOCKER_DIR__/ssh:/opt/stack-ssh:ro
+      - __DOCKER_DIR__/gitconfig:/home/dev/.gitconfig:ro
+      # Pod root mounted at /workspace. Stack workspace template files are copied
+      # into the pod root by isopod without overwriting pod-local edits:
+__WORKSPACE_TEMPLATE_VOLUMES__
+__REPO_VOLUMES__
+volumes:
+  data:
