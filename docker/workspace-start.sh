@@ -16,24 +16,6 @@ if [ -n "$TZ" ]; then
   echo "Timezone: $TZ"
 fi
 
-# ── Remove non-active repos ─────────────────────────────────────────────────
-# ISOPOD_REPOS lists repos that are bind-mounted into this pod.
-# Remove leftover directories from the image that aren't in the active list.
-if [ -n "$ISOPOD_REPOS" ]; then
-  IFS=',' read -ra active_repos <<< "$ISOPOD_REPOS"
-  for dir in /workspace/*/; do
-    [ -d "$dir" ] || continue
-    dir_name=$(basename "$dir")
-    match=false
-    for repo in "${active_repos[@]}"; do
-      [ "$repo" = "$dir_name" ] && match=true && break
-    done
-    if [ "$match" = false ]; then
-      rm -rf "$dir"
-    fi
-  done
-fi
-
 # ── Start your services below ───────────────────────────────────────────────
 #
 # Examples:
@@ -97,8 +79,9 @@ if command -v code-server &> /dev/null; then
   fi
 
   # Generate multi-root workspace file so each repo gets its own
-  # Explorer root and Source Control section
-  WORKSPACE_FILE="/workspace/workspace.code-workspace"
+  # Explorer root and Source Control section. Keep it outside /workspace so it
+  # does not become pod template material or conflict with pod-local files.
+  WORKSPACE_FILE="/tmp/workspace.code-workspace"
   if [ -n "$ISOPOD_REPOS" ]; then
     IFS=',' read -ra repos <<< "$ISOPOD_REPOS"
     FOLDERS=""

@@ -17,6 +17,12 @@ import {
   dockerCleanup,
 } from "./docker.js";
 import { generateCompose } from "./compose.js";
+import {
+  describeWorkspaceTemplateSync,
+  isWorkspaceTemplateManaged,
+  markWorkspaceTemplateManaged,
+  syncWorkspaceTemplate,
+} from "./workspace-template.js";
 import { setupWorkspace, teardownWorkspace, waitForUrls } from "./workspace.js";
 import type { UrlInfo } from "./workspace.js";
 import type { Pod, PodRepo, RemoveWarning } from "./types.js";
@@ -174,7 +180,14 @@ export async function createPod(name: string, opts: CreatePodOptions): Promise<v
     }
   }
 
-  // Step 3: Run pre-create hook
+  // Step 3: Apply one-way stack workspace template and mark this pod for future syncs
+  const templateSummary = describeWorkspaceTemplateSync(syncWorkspaceTemplate(stack, podDir));
+  if (templateSummary) {
+    log(`Copied workspace template (${templateSummary})`);
+  }
+  markWorkspaceTemplateManaged(podDir);
+
+  // Step 4: Run pre-create hook
   const preCreateHook = join(dockerDir, "hooks", "pre-create");
   if (existsSync(preCreateHook)) {
     log("Running pre-create hook...");
@@ -196,10 +209,10 @@ export async function createPod(name: string, opts: CreatePodOptions): Promise<v
     } catch { /* ignore hook failures */ }
   }
 
-  // Step 4: Start container
+  // Step 5: Start container
   await podUp(name, { cloneDb: true, onLog: log, waitForServices: false, rebuildIfStale: true });
 
-  // Step 5: Run post-create hook
+  // Step 6: Run post-create hook
   const postCreateHook = join(dockerDir, "hooks", "post-create");
   if (existsSync(postCreateHook)) {
     log("Running post-create hook...");
@@ -267,6 +280,13 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
   const project = composeProject(name, stackName);
 
   log(`Bringing up workspace for: ${name} (stack: ${stackName})`);
+
+  if (isWorkspaceTemplateManaged(podDir)) {
+    const templateSummary = describeWorkspaceTemplateSync(syncWorkspaceTemplate(stackName, podDir));
+    if (templateSummary) {
+      log(`Copied workspace template (${templateSummary})`);
+    }
+  }
 
   await ensureImage(log, stackName, opts.rebuildIfStale);
 

@@ -8,25 +8,6 @@ if [ -n "$TZ" ]; then
   echo "Timezone set to $TZ"
 fi
 
-# ── Remove non-active repos ──────────────────────────────────────────────────
-if [ -n "$ISOPOD_REPOS" ]; then
-  IFS=',' read -ra active_repos <<< "$ISOPOD_REPOS"
-  for dir in /workspace/*/; do
-    [ -d "$dir" ] || continue
-    dir_name=$(basename "$dir")
-    match=false
-    for repo in "${active_repos[@]}"; do
-      if [ "$repo" = "$dir_name" ]; then
-        match=true
-        break
-      fi
-    done
-    if [ "$match" = false ]; then
-      rm -rf "$dir"
-    fi
-  done
-fi
-
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 PGDATA=/pgdata
 
@@ -105,8 +86,9 @@ if command -v code-server &> /dev/null; then
   fi
 
   # Generate multi-root workspace file so each repo gets its own
-  # Explorer root and Source Control section
-  WORKSPACE_FILE="/workspace/workspace.code-workspace"
+  # Explorer root and Source Control section. Keep it outside /workspace so it
+  # does not become pod template material or conflict with pod-local files.
+  WORKSPACE_FILE="/tmp/workspace.code-workspace"
   if [ -n "$ISOPOD_REPOS" ]; then
     IFS=',' read -ra repos <<< "$ISOPOD_REPOS"
     FOLDERS=""

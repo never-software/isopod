@@ -18,7 +18,10 @@ isopod replaces these at generation time:
 | `__DOCKER_DIR__` | Absolute path to the docker config directory |
 | `__IMAGE_NAME__` | Workspace image name (e.g., `isopod-workspace`) |
 | `__REPO_LIST__` | Comma-separated list of active repos |
+| `__WORKSPACE_TEMPLATE_VOLUMES__` | Pod-root bind mount for `/workspace` |
 | `__REPO_VOLUMES__` | Bind-mount volume definitions for each repo |
+
+`__WORKSPACE_TEMPLATE_VOLUMES__` expands to a bind mount from the pod directory to `/workspace`. `stacks/<stack>/workspace` is not mounted live; it is a one-way template source. isopod copies missing template files into new pods and into marked pods on later `up` runs without overwriting pod-local edits.
 
 `__REPO_VOLUMES__` is auto-generated based on which repos are included in the pod. For each repo, isopod creates:
 - A bind mount from the pod directory into `/workspace/<repo>`
@@ -43,6 +46,7 @@ services:
       - "5173"    # Vite
       - "8443"    # code-server
     volumes:
+__WORKSPACE_TEMPLATE_VOLUMES__
 __REPO_VOLUMES__
       - pgdata:/pgdata
 

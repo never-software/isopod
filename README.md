@@ -85,7 +85,7 @@ When you run `isopod create my-feature`, here's what happens:
 
 **Database snapshots** let you save a pod's DB state and restore it into another pod. Good for sharing a seeded baseline without re-running seeds every time.
 
-**Pod templates** (`pod_workspace_template/`): files here are live-mounted into every pod at `/workspace/`. Handy for AI agent configs, editor settings, or vector DB indexes across multiple repos in a stack. Changes take effect on the next `isopod up`.
+**Pod templates** (`stacks/<stack>/workspace/`): files here are a one-way template source for pods in that stack. isopod copies missing files into new pod roots, and later `isopod up` copies only missing files into pods created with the template marker. Pod-local edits are never overwritten, old unmarked pods are not backfilled, and each pod root is mounted at `/workspace` with repo mounts overlaid at `/workspace/<repo>`.
 
 Each pod runs [code-server](https://github.com/coder/code-server) for a browser-based VS Code. Dev servers start automatically via the startup script and `tasks.json` tails their logs.
 

@@ -50,13 +50,8 @@ export function generateCompose(
   }
   repoVolumes = repoVolumes.replace(/\n$/, "");
 
-  // Mount workspace/ directly as /workspace — the single shared dir across all pods
-  // Per-pod repos above override their specific subdirectories on top of this base mount
-  let workspaceTemplateVolumes = "";
-  const workspaceTemplateDir = config.stackWorkspaceTemplateDir(stack);
-  if (existsSync(workspaceTemplateDir)) {
-    workspaceTemplateVolumes = `      - ${workspaceTemplateDir}:/workspace:delegated`;
-  }
+  // Mount the pod root as /workspace. Repos below override their subdirectories.
+  const workspaceTemplateVolumes = "      - .:/workspace:delegated";
 
   // Read template and substitute
   let template = readFileSync(templateFile, "utf-8");

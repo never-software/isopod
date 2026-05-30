@@ -48,7 +48,7 @@ You are setting up isopod — a tool for creating parallel, isolated development
 - [ ] Set required environment variables for your app
 - [ ] Add port mappings for your services (use dynamic ports to avoid conflicts)
 - [ ] Add named volumes for persistent data (e.g., `pgdata`)
-- [ ] Ensure `__REPO_VOLUMES__`, `__FEATURE_NAME__`, `__IMAGE_NAME__`, and `__REPO_LIST__` placeholders are present
+- [ ] Ensure `__WORKSPACE_TEMPLATE_VOLUMES__`, `__REPO_VOLUMES__`, `__FEATURE_NAME__`, `__IMAGE_NAME__`, and `__REPO_LIST__` placeholders are present
 - [ ] See [docker-compose-template.md](docker-compose-template.md) for details
 
 ## Configure build.sh (if needed)

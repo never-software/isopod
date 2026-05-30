@@ -20,7 +20,7 @@ docker.local/workspace-start.sh
 
 ## How it works
 
-The script runs inside the container as the entrypoint (`CMD` in the Dockerfile). isopod sets the `ISOPOD_REPOS` environment variable with a comma-separated list of repos active in the pod. Use this to clean up unused repos from the image.
+The script runs inside the container as the entrypoint (`CMD` in the Dockerfile). isopod sets the `ISOPOD_REPOS` environment variable with a comma-separated list of repos active in the pod. Use this to target per-repo setup work, such as dependency installation or service startup.
 
 Application services should be started here (not in code-server tasks) for reliability. Log output to files in `/tmp/` so code-server tasks can `tail -f` them for visibility. See the [code-server docs](code-server.md) for how to set up the log tailing tasks.
 
@@ -29,20 +29,6 @@ Application services should be started here (not in code-server tasks) for relia
 ```bash
 #!/bin/bash
 set -e
-
-# Remove repos not active in this pod
-if [ -n "$ISOPOD_REPOS" ]; then
-  IFS=',' read -ra active_repos <<< "$ISOPOD_REPOS"
-  for dir in /workspace/*/; do
-    [ -d "$dir" ] || continue
-    dir_name=$(basename "$dir")
-    match=false
-    for repo in "${active_repos[@]}"; do
-      [ "$repo" = "$dir_name" ] && match=true && break
-    done
-    [ "$match" = false ] && rm -rf "$dir"
-  done
-fi
 
 # Start PostgreSQL
 echo "Starting PostgreSQL..."

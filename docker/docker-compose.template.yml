@@ -30,7 +30,8 @@ services:
       - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
       # mkcert certificates (generate with: mkcert "*.orb.local" localhost 127.0.0.1)
       - __DOCKER_DIR__/certs:/certs:ro
-      # Shared workspace (workspace/) — live bind mount; per-pod repos overlay on top:
+      # Pod root mounted at /workspace. Stack workspace template files are copied
+      # into the pod root by isopod without overwriting pod-local edits:
 __WORKSPACE_TEMPLATE_VOLUMES__
       # Repo bind mounts are injected here by isopod:
 __REPO_VOLUMES__
