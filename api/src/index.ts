@@ -20,6 +20,14 @@ export {
 // Compose
 export { generateCompose } from "./compose.js";
 
+// Workspace sharing
+export {
+  loadSharingManifest, writeSharingManifest, sharingManifestPath,
+  sharedWorkspaceMounts, buildWorkspaceTree, isSafeRelPath,
+  parseSharingManifest, serializeSharingManifest, effectiveMode, dirState,
+} from "./sharing.js";
+export type { SharingMode, SharingManifest, WorkspaceNode, WorkspaceTree, TriState } from "./sharing.js";
+
 // Workspace
 export { setupWorkspace, teardownWorkspace, getUrls, waitForUrls } from "./workspace.js";
 

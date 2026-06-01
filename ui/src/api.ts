@@ -10,6 +10,9 @@ import type {
   CacheInfo,
   RemoveWarning,
   Settings,
+  WorkspaceTree,
+  SharingManifest,
+  SharingMode,
 } from "./types";
 
 const BASE = "/api";
@@ -145,6 +148,17 @@ export const deleteCacheLayer = (layer: string, stack: string) =>
   post<{ ok: boolean; logs: string[] }>("/cache/delete", { layer, stack });
 export const destroyCache = (stack: string) =>
   post<{ ok: boolean; logs: string[] }>("/cache/destroy", { stack });
+
+// ── Workspace sharing ───────────────────────────────────────────────
+
+export const fetchWorkspaceTree = (stack: string) =>
+  get<WorkspaceTree>(`/workspace-tree?stack=${encodeURIComponent(stack)}`);
+export const fetchSharing = (stack: string) =>
+  get<SharingManifest>(`/workspace-sharing?stack=${encodeURIComponent(stack)}`);
+export const updateSharing = (
+  stack: string,
+  manifest: { default: SharingMode; overrides: Record<string, SharingMode> },
+) => post<{ ok: boolean }>("/workspace-sharing", { stack, ...manifest });
 
 // ── Database ────────────────────────────────────────────────────────
 

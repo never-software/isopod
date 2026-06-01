@@ -23,6 +23,7 @@ const STACK_SUB_NAV: { view: StackSubView; label: string; icon: string }[] = [
   { view: "pods", label: "Pods", icon: "cube" },
   { view: "indexes", label: "Indexes", icon: "chart" },
   { view: "snapshots", label: "Data Snapshots", icon: "database" },
+  { view: "sharing", label: "Sharing", icon: "share" },
   { view: "settings", label: "Settings", icon: "gear" },
 ];
 
@@ -56,6 +57,11 @@ const ICONS: Record<string, () => any> = {
   stack: () => (
     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
       <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7" />
+    </svg>
+  ),
+  share: () => (
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
     </svg>
   ),
 };

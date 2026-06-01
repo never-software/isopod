@@ -3,6 +3,7 @@ import { join } from "path";
 import { execSync } from "child_process";
 import { config } from "./config.js";
 import { containerName } from "./docker.js";
+import { sharedWorkspaceMounts } from "./sharing.js";
 
 /**
  * Generate (or regenerate) docker-compose.yml for a pod from the current template.
@@ -51,7 +52,13 @@ export function generateCompose(
   repoVolumes = repoVolumes.replace(/\n$/, "");
 
   // Mount the pod root as /workspace. Repos below override their subdirectories.
-  const workspaceTemplateVolumes = "      - .:/workspace:delegated";
+  // Entries marked "shared" in the stack's .workspace-sharing manifest get an
+  // extra live overlay mount of the canonical template (edits flow back and
+  // across pods); with no manifest this is just the root mount, exactly as before.
+  const workspaceTemplateVolumes = [
+    "      - .:/workspace:delegated",
+    ...sharedWorkspaceMounts(stack),
+  ].join("\n");
 
   // Read template and substitute
   let template = readFileSync(templateFile, "utf-8");
