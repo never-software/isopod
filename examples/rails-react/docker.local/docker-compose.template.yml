@@ -21,6 +21,7 @@ services:
       - data:/pgdata
       - __DOCKER_DIR__/code-server:/root/.local/share/code-server/User:delegated
       - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
+      - __DOCKER_DIR__/services-start.sh:/usr/local/bin/services-start.sh:ro
       - __DOCKER_DIR__/certs:/certs:ro
 __REPO_VOLUMES__
 

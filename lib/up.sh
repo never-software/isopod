@@ -43,6 +43,7 @@ cmd_up() {
   fi
 
   generate_compose "$feature_name"
+  generate_services "$feature_name"
 
   info "Starting container..."
   compose_up "$project" "$compose_file"

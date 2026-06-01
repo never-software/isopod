@@ -1,0 +1,14 @@
+{
+  "_comment": "Single source of truth for this stack's dev services. isopod regenerates code-server/settings.json (startup terminals), code-server/tasks.json, and services-start.sh from this file on every `isopod up`. Add one entry per long-running service. Fields: id, displayName, port, protocol(http|https), urlLabel, workdir, logPath, startCommand, stopPort, tailInTerminal(default true), autoStart(default true). A service with no startCommand is listed for its URL only (e.g. the IDE).",
+  "services": [
+    {
+      "id": "ide",
+      "displayName": "IDE",
+      "port": 8443,
+      "protocol": "https",
+      "urlLabel": "IDE",
+      "tailInTerminal": false,
+      "autoStart": false
+    }
+  ]
+}

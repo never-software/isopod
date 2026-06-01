@@ -67,11 +67,16 @@ _setup_prerequisites() {
     fi
   fi
 
-  # jq (optional)
+  # jq (required — used to generate service config from services.json)
   if command -v jq &>/dev/null; then
     success "jq"
   else
-    info "jq not found (optional — brew install jq)"
+    warn "jq — not found (required to generate service config from services.json)"
+    if [[ "$has_brew" == "true" ]]; then
+      _ask "Install jq?" && brew install jq
+    else
+      info "Install: brew install jq"
+    fi
   fi
 }
 

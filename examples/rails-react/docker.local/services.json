@@ -1,0 +1,33 @@
+{
+  "services": [
+    {
+      "id": "ide",
+      "displayName": "IDE",
+      "port": 8443,
+      "protocol": "https",
+      "urlLabel": "IDE",
+      "tailInTerminal": false,
+      "autoStart": false
+    },
+    {
+      "id": "rails",
+      "displayName": "Rails API",
+      "port": 3000,
+      "protocol": "https",
+      "urlLabel": "API",
+      "workdir": "/workspace/example-api",
+      "logPath": "/tmp/rails.log",
+      "startCommand": "rm -f tmp/pids/server.pid; bundle exec rails server -b 0.0.0.0 -p 3000"
+    },
+    {
+      "id": "vite",
+      "displayName": "Frontend",
+      "port": 4000,
+      "protocol": "https",
+      "urlLabel": "Frontend",
+      "workdir": "/workspace/example-frontend",
+      "logPath": "/tmp/vite.log",
+      "startCommand": "VITE_API_URL=http://localhost:3000 npx vite --host 0.0.0.0 --port 4000"
+    }
+  ]
+}

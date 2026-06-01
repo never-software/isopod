@@ -94,6 +94,16 @@ elif [ -f /workspace/example-api/Gemfile ] && [ -f "$PGDATA/.databases_ready" ];
   echo "Migrations complete"
 fi
 
+# ── Managed services (from services.json via services-start.sh) ───────────────
+# services-start.sh is generated host-side from services.json and bind-mounted.
+# Pre-create every service log NOW (before code-server boots) so the startup
+# terminals' `tail -F` attach to existing files instead of racing the services.
+SERVICES_RUNNER=/usr/local/bin/services-start.sh
+if [ -f "$SERVICES_RUNNER" ]; then
+  source "$SERVICES_RUNNER"
+  type precreate_logs &>/dev/null && precreate_logs
+fi
+
 # ── code-server ───────────────────────────────────────────────────────────────
 if command -v code-server &> /dev/null; then
   echo "Starting code-server on port 8443..."
@@ -123,24 +133,14 @@ if command -v code-server &> /dev/null; then
 fi
 
 # ── Application services ─────────────────────────────────────────────────────
+# Defined in services.json, launched by the generated services-start.sh.
 echo "Starting application services..."
-
-# Clean up stale PID files
-rm -f /workspace/example-api/tmp/pids/server*.pid 2>/dev/null || true
-
-if [ -f /workspace/example-api/Gemfile ]; then
-  cd /workspace/example-api
-  bundle exec rails server &> /tmp/rails.log &
-  echo "Rails API on port 3000"
+if type start_services &>/dev/null; then
+  start_services
+  echo "All services started"
+else
+  echo "No services-start.sh found — skipping (define services in services.json)"
 fi
-
-if [ -f /workspace/example-frontend/package.json ]; then
-  cd /workspace/example-frontend
-  npx vite --host 0.0.0.0 --port 4000 &> /tmp/vite.log &
-  echo "Vite frontend on port 4000"
-fi
-
-echo "All services started"
 
 # Keep the container alive
 exec sleep infinity

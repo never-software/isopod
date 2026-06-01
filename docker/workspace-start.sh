@@ -83,6 +83,16 @@ fi
 # Frontend API URL: derive from window.location so it works with any pod name:
 #   const API_URL = `${window.location.protocol}//${window.location.hostname}:3000`
 
+# ── Managed services (from services.json via services-start.sh) ───────────────
+# services-start.sh is generated host-side from services.json and bind-mounted.
+# Pre-create every service log NOW (before code-server boots) so the startup
+# terminals' `tail -F` attach to existing files instead of racing the services.
+SERVICES_RUNNER=/usr/local/bin/services-start.sh
+if [ -f "$SERVICES_RUNNER" ]; then
+  source "$SERVICES_RUNNER"
+  type precreate_logs &>/dev/null && precreate_logs
+fi
+
 # ── code-server (browser-based VS Code) ─────────────────────────────────────
 if command -v code-server &> /dev/null; then
   echo "Starting code-server on port 8443..."
@@ -109,6 +119,13 @@ if command -v code-server &> /dev/null; then
     --disable-telemetry \
     /workspace &> /tmp/code-server.log &
   echo "code-server ready at https://$(hostname).orb.local:8443"
+fi
+
+# ── Start managed services (defined in services.json) ─────────────────────────
+if type start_services &>/dev/null; then
+  echo "Starting application services..."
+  start_services
+  echo "All services started"
 fi
 
 echo "Workspace ready"

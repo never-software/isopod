@@ -204,6 +204,7 @@ source_isopod_libs() {
   setopt NULL_GLOB 2>/dev/null || true
   source "$LIB_DIR/helpers/core.sh"
   source "$LIB_DIR/helpers/docker.sh"
+  source "$LIB_DIR/helpers/services.sh"
   source "$LIB_DIR/helpers/workspace.sh"
   source "$LIB_DIR/helpers/git.sh"
   source "$LIB_DIR/helpers/layers.sh"
