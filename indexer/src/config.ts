@@ -41,6 +41,8 @@ export const config = {
   get isopodRoot() { return findIsopodRoot(); },
   get reposDir() { return resolve(this.isopodRoot, "repos"); },
   get podsDir() { return resolve(this.isopodRoot, "pods"); },
+  get workspaceTemplateDir() { return resolve(this.isopodRoot, "pod_workspace_template"); },
+  get sharingManifest() { return resolve(this.isopodRoot, ".workspace-sharing"); },
 
   indexerRoot,
   pidFile: resolve(indexerRoot, ".indexer.pid"),

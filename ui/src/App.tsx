@@ -4,8 +4,9 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { PodList } from "./components/pods/PodList";
 import { IndexerOverview } from "./components/indexer/IndexerOverview";
 import { SnapshotList } from "./components/db/SnapshotList";
+import { WorkspaceSharing } from "./components/sharing/WorkspaceSharing";
 
-const VIEWS: View[] = ["pods", "indexer", "database"];
+const VIEWS: View[] = ["pods", "indexer", "database", "sharing"];
 
 function getInitialView(): View {
   const hash = location.hash.slice(1);
@@ -33,6 +34,9 @@ export default function App() {
           </Match>
 <Match when={view() === "database"}>
             <SnapshotList />
+          </Match>
+          <Match when={view() === "sharing"}>
+            <WorkspaceSharing />
           </Match>
         </Switch>
       </main>

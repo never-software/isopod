@@ -29,6 +29,7 @@ LIB_DIR="$PROJECT_ROOT/lib"
 
 source "$LIB_DIR/helpers/core.sh"
 source "$LIB_DIR/helpers/docker.sh"
+source "$LIB_DIR/helpers/sharing.sh"
 source "$LIB_DIR/helpers/workspace.sh"
 source "$LIB_DIR/helpers/git.sh"
 source "$LIB_DIR/helpers/layers.sh"
@@ -52,6 +53,7 @@ source "$LIB_DIR/setup.sh"
 source "$LIB_DIR/help.sh"
 source "$LIB_DIR/index.sh"
 source "$LIB_DIR/search.sh"
+source "$LIB_DIR/sharing.sh"
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
@@ -73,6 +75,7 @@ case "${1:-help}" in
   setup) cmd_setup ;;
   index) shift; cmd_index "$@" ;;
   search) shift; cmd_search "$@" ;;
+  sharing) shift; cmd_sharing "$@" ;;
   help|--help|-h) cmd_help ;;
   *) error "Unknown command: $1. Run 'isopod help' for usage." ;;
 esac

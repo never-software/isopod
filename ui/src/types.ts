@@ -63,6 +63,31 @@ export interface Snapshot {
   created: string;
 }
 
+// ── Workspace sharing types ─────────────────────────────────────────
+
+export type SharingMode = "shared" | "local";
+
+export interface WorkspaceNode {
+  path: string;
+  name: string;
+  type: "dir" | "file";
+  size: number;
+  mode: "shared" | "local" | "mixed";
+  explicit?: SharingMode;
+  children?: WorkspaceNode[];
+}
+
+export interface WorkspaceTree {
+  default: SharingMode;
+  nodes: WorkspaceNode[];
+}
+
+export interface SharingManifest {
+  default: SharingMode;
+  overrides: Record<string, SharingMode>;
+  runningPods: string[];
+}
+
 // ── Navigation ──────────────────────────────────────────────────────
 
-export type View = "pods" | "indexer" | "database";
+export type View = "pods" | "indexer" | "database" | "sharing";

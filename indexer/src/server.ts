@@ -1,5 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { readFileSync, existsSync, statSync, openSync, readSync, closeSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, renameSync, existsSync, statSync, openSync, readSync, closeSync, readdirSync } from "fs";
 import { resolve, join, extname } from "path";
 import { execSync, exec, spawn } from "child_process";
 import { config } from "./config.js";
@@ -55,6 +55,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/watch-targets/disabled") return apiDisabledTargets(res);
     if (path === "/api/snapshots") return apiSnapshots(res);
     if (path === "/api/repos") return apiRepos(res);
+    if (path === "/api/workspace-tree") return apiWorkspaceTree(res);
+    if (path === "/api/workspace-sharing") return apiGetSharing(res);
 
     const branchesMatch = path.match(/^\/api\/collection\/(.+)\/branches$/);
     if (branchesMatch) return apiCollectionBranches(res, decodeURIComponent(branchesMatch[1]));
@@ -78,6 +80,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
 
     if (path === "/api/daemon/start") return apiDaemonStart(res);
     if (path === "/api/daemon/stop") return apiDaemonStop(res);
+
+    if (path === "/api/workspace-sharing") return apiSetSharing(res, body);
 
     if (path === "/api/watch-targets/toggle") return apiToggleTarget(res, body);
     if (path === "/api/watch-targets/toggle-pod") return apiTogglePod(res, body);
@@ -470,6 +474,190 @@ function apiPodAction(res: ServerResponse, podName: string, action: "up" | "down
       json(res, 200, { ok: true, output });
     }
   });
+}
+
+// ── Workspace sharing ───────────────────────────────────────────────
+//
+// The .workspace-sharing manifest controls whether each pod_workspace_template/
+// entry is "shared" (a live bind mount of the canonical template — the default)
+// or "local" (a per-pod copy). The Zsh engine (lib/helpers/sharing.sh) is the
+// source of truth for actual mounts; this server only reads/writes the manifest
+// and re-implements the longest-prefix lookup for the dashboard's display tree.
+
+type Mode = "shared" | "local";
+interface SharingManifest { default: Mode; overrides: Record<string, Mode>; }
+
+const TREE_HIDDEN = new Set([".git", "node_modules", ".DS_Store", ".gitkeep"]);
+
+function parseSharingManifest(): SharingManifest {
+  const manifest: SharingManifest = { default: "shared", overrides: {} };
+  let text: string;
+  try {
+    text = readFileSync(config.sharingManifest, "utf-8");
+  } catch {
+    return manifest;
+  }
+  for (let line of text.split("\n")) {
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const toks = line.trim().split(/\s+/).filter(Boolean);
+    if (toks.length === 0) continue;
+    if (toks[0] === "default") {
+      if (toks[1] === "shared" || toks[1] === "local") manifest.default = toks[1];
+    } else if ((toks[0] === "shared" || toks[0] === "local") && toks[1]) {
+      manifest.overrides[toks[1]] = toks[0];
+    }
+  }
+  return manifest;
+}
+
+function serializeSharingManifest(m: SharingManifest): string {
+  const lines = [
+    "# .workspace-sharing — per-entry workspace sharing manifest",
+    "# Managed by 'isopod sharing' and the dashboard. mode: shared | local",
+    `default ${m.default}`,
+  ];
+  for (const k of Object.keys(m.overrides).sort()) lines.push(`${m.overrides[k]} ${k}`);
+  return lines.join("\n") + "\n";
+}
+
+// Effective mode = the override whose key is the longest prefix of (or equal to)
+// the path, else the manifest default.
+function effectiveMode(rel: string, m: SharingManifest): Mode {
+  let bestLen = -1;
+  let best: Mode = m.default;
+  for (const k of Object.keys(m.overrides)) {
+    if (rel === k || rel.startsWith(k + "/")) {
+      if (k.length > bestLen) { bestLen = k.length; best = m.overrides[k]; }
+    }
+  }
+  return best;
+}
+
+function hasOverrideUnder(rel: string, target: Mode, m: SharingManifest): boolean {
+  return Object.keys(m.overrides).some(
+    (k) => k.startsWith(rel + "/") && m.overrides[k] === target
+  );
+}
+
+// Tri-state for a directory, mirroring the engine's collapse rule.
+function dirState(rel: string, m: SharingManifest): "shared" | "local" | "mixed" {
+  const mode = effectiveMode(rel, m);
+  if (mode === "shared" && !hasOverrideUnder(rel, "local", m)) return "shared";
+  if (mode === "local" && !hasOverrideUnder(rel, "shared", m)) return "local";
+  return "mixed";
+}
+
+interface WorkspaceNode {
+  path: string;
+  name: string;
+  type: "dir" | "file";
+  size: number;
+  mode: "shared" | "local" | "mixed";
+  explicit?: Mode;
+  children?: WorkspaceNode[];
+}
+
+function buildTree(absDir: string, rel: string, m: SharingManifest): WorkspaceNode[] {
+  let entries;
+  try {
+    entries = readdirSync(absDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  entries.sort((a, b) => {
+    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const out: WorkspaceNode[] = [];
+  for (const e of entries) {
+    if (TREE_HIDDEN.has(e.name)) continue;
+    const crel = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) {
+      out.push({
+        path: crel, name: e.name, type: "dir", size: 0,
+        mode: dirState(crel, m), explicit: m.overrides[crel],
+        children: buildTree(join(absDir, e.name), crel, m),
+      });
+    } else {
+      // Size only — never read contents (handles large binaries like prod-backup).
+      let size = 0;
+      try { size = statSync(join(absDir, e.name)).size; } catch { /* ignore */ }
+      out.push({
+        path: crel, name: e.name, type: "file", size,
+        mode: effectiveMode(crel, m), explicit: m.overrides[crel],
+      });
+    }
+  }
+  return out;
+}
+
+// Reject anything that isn't a clean relative path resolving inside the template.
+function isSafeRelPath(p: unknown): p is string {
+  if (typeof p !== "string" || !p || p.includes("\0") || p.startsWith("/")) return false;
+  const parts = p.split("/");
+  if (parts.some((seg) => seg === "" || seg === "." || seg === "..")) return false;
+  const root = config.workspaceTemplateDir;
+  const full = resolve(root, p);
+  return full === root || full.startsWith(root + "/");
+}
+
+function runningPodNames(): string[] {
+  const out: string[] = [];
+  for (const [name, status] of getContainerStatuses()) {
+    if (status.state === "running") out.push(name);
+  }
+  return out;
+}
+
+function apiWorkspaceTree(res: ServerResponse): void {
+  const manifest = parseSharingManifest();
+  const root = config.workspaceTemplateDir;
+  const nodes = existsSync(root) ? buildTree(root, "", manifest) : [];
+  json(res, 200, { default: manifest.default, nodes });
+}
+
+function apiGetSharing(res: ServerResponse): void {
+  const m = parseSharingManifest();
+  json(res, 200, { default: m.default, overrides: m.overrides, runningPods: runningPodNames() });
+}
+
+function apiSetSharing(res: ServerResponse, body: any): void {
+  const def = body?.default;
+  if (def !== "shared" && def !== "local") {
+    json(res, 400, { error: "'default' must be 'shared' or 'local'" });
+    return;
+  }
+  const overrides = body?.overrides;
+  if (overrides === null || typeof overrides !== "object" || Array.isArray(overrides)) {
+    json(res, 400, { error: "'overrides' must be an object" });
+    return;
+  }
+
+  const clean: Record<string, Mode> = {};
+  for (const [key, val] of Object.entries(overrides)) {
+    if (val !== "shared" && val !== "local") {
+      json(res, 400, { error: `invalid mode '${val}' for '${key}'` });
+      return;
+    }
+    if (!isSafeRelPath(key)) {
+      json(res, 400, { error: `invalid path: '${key}'` });
+      return;
+    }
+    clean[key] = val;
+  }
+
+  try {
+    const text = serializeSharingManifest({ default: def, overrides: clean });
+    const tmp = config.sharingManifest + ".tmp";
+    writeFileSync(tmp, text);
+    renameSync(tmp, config.sharingManifest);
+  } catch (error: any) {
+    json(res, 500, { error: error.message });
+    return;
+  }
+  json(res, 200, { ok: true, default: def, overrides: clean });
 }
 
 // ── Static file serving ─────────────────────────────────────────────

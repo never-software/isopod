@@ -97,22 +97,15 @@ generate_compose() {
     home_volumes="${home_volumes%$'\n'}"
   fi
 
-  # Generate workspace template volume mounts (live bind mounts from source)
-  local workspace_template_volumes=""
-  local workspace_template_dir="$PROJECT_ROOT/pod_workspace_template"
-  if [[ -d "$workspace_template_dir" ]]; then
-    for item in "$workspace_template_dir"/*(DN); do
-      [[ -e "$item" ]] || continue
-      local name=$(basename "$item")
-      [[ "$name" == ".gitkeep" ]] && continue
-      workspace_template_volumes="${workspace_template_volumes}      - ${item}:/workspace/${name}:delegated"$'\n'
-    done
-    workspace_template_volumes="${workspace_template_volumes%$'\n'}"
-  fi
+  # Generate workspace template volume mounts via the sharing resolver.
+  # Shared entries → live template bind mounts (default); local entries →
+  # per-pod copies under .isopod-local. See lib/helpers/sharing.sh.
+  local ws_volumes
+  ws_volumes="$(workspace_template_volumes "$pod_dir")"
 
   export VOLUMES="$repo_volumes"
   export HOME_TEMPLATE_VOLUMES="$home_volumes"
-  export WORKSPACE_TEMPLATE_VOLUMES="$workspace_template_volumes"
+  export WORKSPACE_TEMPLATE_VOLUMES="$ws_volumes"
   awk -v name="$feature_name" \
       -v docker_dir="$DOCKER_DIR" \
       -v image_name="$WORKSPACE_IMAGE" \

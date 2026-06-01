@@ -42,6 +42,7 @@ cmd_up() {
     fi
   fi
 
+  sync_local_workspace_entries "$feature_name"
   generate_compose "$feature_name"
 
   info "Starting container..."

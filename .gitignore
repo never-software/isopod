@@ -10,6 +10,10 @@ pod_workspace_template/*
 .generated.Dockerfile
 *.pem
 
+# Per-instance workspace sharing manifest (references gitignored template paths)
+.workspace-sharing
+.workspace-sharing.tmp
+
 # Indexer
 indexer/dist/
 indexer/node_modules/

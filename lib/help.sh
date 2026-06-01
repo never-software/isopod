@@ -23,6 +23,7 @@ cmd_help() {
   echo "  ${BOLD}setup${NC}                                       Interactive first-time setup wizard"
   echo "  ${BOLD}index${NC}         [status|base|pod <name>]      Manage code indexing"
   echo "  ${BOLD}search${NC}        <query> [--pod <name>]        Search indexed code"
+  echo "  ${BOLD}sharing${NC}       list|set|unset|default        Mark workspace entries shared/local"
   echo "  ${BOLD}help${NC}                                        Show this help"
   echo ""
 

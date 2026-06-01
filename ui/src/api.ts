@@ -7,6 +7,8 @@ import type {
   LogResponse,
   Snapshot,
   Repo,
+  WorkspaceTree,
+  SharingManifest,
 } from "./types";
 
 const BASE = "/api";
@@ -58,3 +60,10 @@ export const toggleWatchPod = (podName: string, enabled: boolean) => post<{ podN
 // ── Database ────────────────────────────────────────────────────────
 
 export const fetchSnapshots = () => get<Snapshot[]>("/snapshots");
+
+// ── Workspace sharing ───────────────────────────────────────────────
+
+export const fetchWorkspaceTree = () => get<WorkspaceTree>("/workspace-tree");
+export const fetchSharing = () => get<SharingManifest>("/workspace-sharing");
+export const updateSharing = (manifest: { default: string; overrides: Record<string, string> }) =>
+  post<{ ok: boolean }>("/workspace-sharing", manifest);
