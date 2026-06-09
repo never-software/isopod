@@ -25,6 +25,14 @@ services:
     volumes:
       # Named volume for persistent data (database, etc.)
       - data:/data
+      # Persist the workspace user's home directory so per-user state survives
+      # container recreation — e.g. Claude Code history (~/.claude, ~/.claude.json),
+      # shell history, and tool caches. Without this, that state lives in the
+      # container's writable layer and is wiped every time the pod is recreated.
+      # NOTE: a named volume is seeded from the image on first create, then frozen
+      # relative to it. Set the path to match your image's user — /root for the
+      # default root user, or /home/<user> if your image runs as a non-root user.
+      - home:/root
       # code-server settings and tasks
       - __DOCKER_DIR__/code-server:/root/.local/share/code-server/User:delegated
       - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
@@ -38,3 +46,4 @@ __REPO_VOLUMES__
 
 volumes:
   data:
+  home:

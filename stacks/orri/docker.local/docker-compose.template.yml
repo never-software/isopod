@@ -43,6 +43,13 @@ services:
       - BUNDLE_GITHUB__COM=${BUNDLE_GITHUB__COM}
     volumes:
       - data:/pgdata
+      # Persist the dev user's home so per-user state survives container
+      # recreation — Claude Code history (~/.claude transcripts + ~/.claude.json),
+      # shell history, and tool caches. Without this, that state lives only in the
+      # container's writable layer and is wiped on every `isopod up` that recreates
+      # the container. Named volume: seeded from the image on first create, then
+      # persists across recreates (cleared only by `down -v`, i.e. `isopod remove`).
+      - home:/home/dev
       - ${SSH_AUTH_SOCK}:/ssh-agent
       - __DOCKER_DIR__/code-server:/home/dev/.local/share/code-server/User:delegated
       - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
@@ -59,3 +66,4 @@ __WORKSPACE_TEMPLATE_VOLUMES__
 __REPO_VOLUMES__
 volumes:
   data:
+  home:
