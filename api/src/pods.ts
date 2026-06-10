@@ -17,6 +17,7 @@ import {
   dockerCleanup,
 } from "./docker.js";
 import { generateCompose } from "./compose.js";
+import { generateServices } from "./services.js";
 import {
   describeWorkspaceTemplateSync,
   isWorkspaceTemplateManaged,
@@ -346,6 +347,7 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
   }
 
   generateCompose(name, { stack: stackName });
+  generateServices(stackName);
 
   log("Starting container...");
   await composeUp(project, composeFile);

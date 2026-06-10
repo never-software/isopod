@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "tsc && node --test \"dist/**/*.test.js\"",
+    "test": "tsc && node --test \"dist/**/*.test.js\" test/services.test.mjs",
     "postinstall": "clang -O2 -o bin/clone bin/clone.c || true"
   },
   "dependencies": {
