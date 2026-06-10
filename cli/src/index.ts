@@ -18,6 +18,7 @@ import { nukeCommand } from "./commands/nuke.js";
 import { setupCommand } from "./commands/setup.js";
 import { indexCommand } from "./commands/index-cmd.js";
 import { searchCommand } from "./commands/search.js";
+import { sharingCommand } from "./commands/sharing.js";
 import { dashboardCommand } from "./commands/dashboard.js";
 
 const program = new Command();
@@ -44,6 +45,7 @@ program.addCommand(removeCommand);
 program.addCommand(setupCommand);
 program.addCommand(indexCommand);
 program.addCommand(searchCommand);
+program.addCommand(sharingCommand);
 program.addCommand(dashboardCommand);
 
 program.parse();

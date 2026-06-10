@@ -11,6 +11,8 @@ import { cacheList, cacheDelete, cacheDestroy } from "./cache.js";
 import { buildAll } from "./docker.js";
 import { getStatus, deleteCollection, deleteBranch, getCollectionBranches, getAllBranches } from "./indexer/qdrant.js";
 import { discoverWatchTargets, startDaemon, stopDaemon, getDisabledTargets, toggleTarget, setDisabledTargets, targetKey } from "./indexer/watcher.js";
+import { buildWorkspaceTree, loadSharingManifest, writeSharingManifest, isSafeRelPath } from "./sharing.js";
+import type { SharingMode } from "./sharing.js";
 
 // ── Server ──────────────────────────────────────────────────────────
 
@@ -77,6 +79,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/stacks") return apiStacks(res);
     if (path === "/api/settings") return apiGetSettings(res);
     if (path === "/api/cache") return apiCache(res, url);
+    if (path === "/api/workspace-tree") return apiWorkspaceTree(res, url);
+    if (path === "/api/workspace-sharing") return apiGetSharing(res, url);
 
     const branchesMatch = path.match(/^\/api\/collection\/(.+)\/branches$/);
     if (branchesMatch) return apiCollectionBranches(res, decodeURIComponent(branchesMatch[1]));
@@ -116,6 +120,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/settings") return apiUpdateSettings(res, body);
     if (path === "/api/cache/delete") return apiCacheDelete(res, body);
     if (path === "/api/cache/destroy") return apiCacheDestroy(res, body);
+    if (path === "/api/workspace-sharing") return apiSetSharing(res, body);
 
     const buildStackMatch = path.match(/^\/api\/stacks\/(.+)\/build$/);
     if (buildStackMatch) return apiStackBuild(res, decodeURIComponent(buildStackMatch[1]));
@@ -584,6 +589,82 @@ function apiPodRemove(res: ServerResponse, podName: string): void {
     res.write(JSON.stringify({ type: "error", message: error.message }) + "\n");
   }
   res.end();
+}
+
+// ── Workspace sharing ───────────────────────────────────────────────
+//
+// The .workspace-sharing manifest decides whether each stack workspace entry
+// is "shared" (a live overlay bind mount of the canonical template) or "local"
+// (the default: a per-pod copy). The engine (sharing.ts) is the source of truth
+// for actual mounts; these handlers only read/write the manifest and serve the
+// dashboard's tri-state tree. Stack is validated against the real stack list so
+// a request can never read or write outside a known stack directory.
+
+function resolveStack(res: ServerResponse, stack: unknown): string | null {
+  if (typeof stack !== "string" || !stack) {
+    json(res, 400, { error: "Missing 'stack'" });
+    return null;
+  }
+  if (!config.listStacks().includes(stack)) {
+    json(res, 404, { error: `Unknown stack '${stack}'` });
+    return null;
+  }
+  return stack;
+}
+
+function apiWorkspaceTree(res: ServerResponse, url: URL): void {
+  const stack = resolveStack(res, url.searchParams.get("stack"));
+  if (!stack) return;
+  json(res, 200, buildWorkspaceTree(stack));
+}
+
+function apiGetSharing(res: ServerResponse, url: URL): void {
+  const stack = resolveStack(res, url.searchParams.get("stack"));
+  if (!stack) return;
+  const m = loadSharingManifest(stack);
+  const runningPods = listPods()
+    .filter((p) => p.stack === stack && p.container.state === "running")
+    .map((p) => p.name);
+  json(res, 200, { default: m.default, overrides: m.overrides, runningPods });
+}
+
+function apiSetSharing(res: ServerResponse, body: any): void {
+  const stack = resolveStack(res, body?.stack);
+  if (!stack) return;
+
+  const def = body?.default;
+  if (def !== "shared" && def !== "local") {
+    json(res, 400, { error: "'default' must be 'shared' or 'local'" });
+    return;
+  }
+
+  const overrides = body?.overrides;
+  if (overrides === null || typeof overrides !== "object" || Array.isArray(overrides)) {
+    json(res, 400, { error: "'overrides' must be an object" });
+    return;
+  }
+
+  const root = config.stackWorkspaceTemplateDir(stack);
+  const clean: Record<string, SharingMode> = {};
+  for (const [key, val] of Object.entries(overrides)) {
+    if (val !== "shared" && val !== "local") {
+      json(res, 400, { error: `invalid mode '${val}' for '${key}'` });
+      return;
+    }
+    if (!isSafeRelPath(key, root)) {
+      json(res, 400, { error: `invalid path: '${key}'` });
+      return;
+    }
+    clean[key] = val;
+  }
+
+  try {
+    writeSharingManifest(stack, { default: def, overrides: clean });
+  } catch (err: any) {
+    json(res, 500, { error: err.message });
+    return;
+  }
+  json(res, 200, { ok: true, default: def, overrides: clean });
 }
 
 // ── Static file serving ─────────────────────────────────────────────

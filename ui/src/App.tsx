@@ -8,10 +8,11 @@ import { SnapshotList } from "./components/db/SnapshotList";
 import { CacheOverview } from "./components/cache/CacheOverview";
 import { SettingsOverview } from "./components/settings/SettingsOverview";
 import { StacksOverview } from "./components/stacks/StacksOverview";
+import { WorkspaceSharing } from "./components/sharing/WorkspaceSharing";
 import { PodsSummary, DatabaseSummary, CacheSummary } from "./components/overview/SummaryTables";
 
 const LANDING_SUBS: LandingSubView[] = ["stacks", "pods", "indexes", "snapshots", "base", "settings"];
-const STACK_SUBS: StackSubView[] = ["pods", "indexes", "snapshots", "base", "settings"];
+const STACK_SUBS: StackSubView[] = ["pods", "indexes", "snapshots", "base", "sharing", "settings"];
 
 function parseHash(): NavState {
   const raw = location.hash.slice(1);
@@ -103,6 +104,9 @@ export default function App() {
                 </Match>
                 <Match when={state().subView === "base"}>
                   <CacheOverview stack={state().stack} />
+                </Match>
+                <Match when={state().subView === "sharing"}>
+                  <WorkspaceSharing stack={state().stack} />
                 </Match>
                 <Match when={state().subView === "settings"}>
                   <SettingsOverview stack={state().stack} />

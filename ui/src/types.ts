@@ -100,11 +100,36 @@ export interface RemoveWarning {
 // ── Navigation ──────────────────────────────────────────────────────
 
 export type LandingSubView = "stacks" | "pods" | "indexes" | "snapshots" | "base" | "settings";
-export type StackSubView = "pods" | "indexes" | "snapshots" | "base" | "settings";
+export type StackSubView = "pods" | "indexes" | "snapshots" | "base" | "sharing" | "settings";
 
 export type NavState =
   | { mode: "landing"; subView: LandingSubView }
   | { mode: "stack"; stack: string; subView: StackSubView };
+
+// ── Workspace sharing types ─────────────────────────────────────────
+
+export type SharingMode = "shared" | "local";
+
+export interface WorkspaceNode {
+  path: string;
+  name: string;
+  type: "dir" | "file";
+  size: number;
+  mode: "shared" | "local" | "mixed";
+  explicit?: SharingMode;
+  children?: WorkspaceNode[];
+}
+
+export interface WorkspaceTree {
+  default: SharingMode;
+  nodes: WorkspaceNode[];
+}
+
+export interface SharingManifest {
+  default: SharingMode;
+  overrides: Record<string, SharingMode>;
+  runningPods: string[];
+}
 
 // ── Settings types ─────────────────────────────────────────────────
 
