@@ -1,10 +1,11 @@
+// GENERATED from services.json — do not edit; edit services.json and re-run isopod up
 {
   "version": "2.0.0",
   "tasks": [
     {
       "label": "Rails (dev): start",
       "type": "shell",
-      "command": "rm -f /workspace/api/tmp/pids/server.pid; cd /workspace/api && bundle exec rails server -b 0.0.0.0 -p 3000",
+      "command": "cd /workspace/api && rm -f tmp/pids/server.pid; bundle exec rails server -b 0.0.0.0 -p 3000",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
@@ -17,13 +18,13 @@
     {
       "label": "Rails (dev): stop",
       "type": "shell",
-      "command": "pkill -f '[p]uma.*3000' && echo 'Stopped Rails (dev)' || echo 'Not running'",
+      "command": "lsof -ti tcp:3000 | xargs -r kill -TERM",
       "problemMatcher": []
     },
     {
       "label": "Rails (dev): restart",
       "type": "shell",
-      "command": "pkill -f '[p]uma.*3000' 2>/dev/null; sleep 1; rm -f /workspace/api/tmp/pids/server.pid; cd /workspace/api && bundle exec rails server -b 0.0.0.0 -p 3000",
+      "command": "lsof -ti tcp:3000 | xargs -r kill -TERM; sleep 1; cd /workspace/api && rm -f tmp/pids/server.pid; bundle exec rails server -b 0.0.0.0 -p 3000",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
@@ -36,7 +37,7 @@
     {
       "label": "Rails (CI): start",
       "type": "shell",
-      "command": "rm -f /workspace/api/tmp/pids/server-ci.pid; cd /workspace/api && RAILS_ENV=ci bundle exec rails server -b 0.0.0.0 -p 3001 -P /workspace/api/tmp/pids/server-ci.pid",
+      "command": "cd /workspace/api && rm -f tmp/pids/server-ci.pid; RAILS_ENV=ci bundle exec rails server -b 0.0.0.0 -p 3001 -P tmp/pids/server-ci.pid",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
@@ -49,13 +50,13 @@
     {
       "label": "Rails (CI): stop",
       "type": "shell",
-      "command": "pkill -f '[p]uma.*3001' && echo 'Stopped Rails (CI)' || echo 'Not running'",
+      "command": "lsof -ti tcp:3001 | xargs -r kill -TERM",
       "problemMatcher": []
     },
     {
       "label": "Rails (CI): restart",
       "type": "shell",
-      "command": "pkill -f '[p]uma.*3001' 2>/dev/null; sleep 1; rm -f /workspace/api/tmp/pids/server-ci.pid; cd /workspace/api && RAILS_ENV=ci bundle exec rails server -b 0.0.0.0 -p 3001 -P /workspace/api/tmp/pids/server-ci.pid",
+      "command": "lsof -ti tcp:3001 | xargs -r kill -TERM; sleep 1; cd /workspace/api && rm -f tmp/pids/server-ci.pid; RAILS_ENV=ci bundle exec rails server -b 0.0.0.0 -p 3001 -P tmp/pids/server-ci.pid",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
@@ -81,13 +82,13 @@
     {
       "label": "Vite (hub): stop",
       "type": "shell",
-      "command": "pkill -f '[v]ite.*5200' && echo 'Stopped Vite (hub)' || echo 'Not running'",
+      "command": "lsof -ti tcp:5200 | xargs -r kill -TERM",
       "problemMatcher": []
     },
     {
       "label": "Vite (hub): restart",
       "type": "shell",
-      "command": "pkill -f '[v]ite.*5200' 2>/dev/null; sleep 1; cd /workspace/frontend && npx nx run hub:dev -- --host 0.0.0.0 --port 5200",
+      "command": "lsof -ti tcp:5200 | xargs -r kill -TERM; sleep 1; cd /workspace/frontend && npx nx run hub:dev -- --host 0.0.0.0 --port 5200",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
@@ -113,13 +114,13 @@
     {
       "label": "Vite (my-orri): stop",
       "type": "shell",
-      "command": "pkill -f '[v]ite.*5201' && echo 'Stopped Vite (my-orri)' || echo 'Not running'",
+      "command": "lsof -ti tcp:5201 | xargs -r kill -TERM",
       "problemMatcher": []
     },
     {
       "label": "Vite (my-orri): restart",
       "type": "shell",
-      "command": "pkill -f '[v]ite.*5201' 2>/dev/null; sleep 1; cd /workspace/frontend && npx nx run my-orri:dev -- --host 0.0.0.0 --port 5201",
+      "command": "lsof -ti tcp:5201 | xargs -r kill -TERM; sleep 1; cd /workspace/frontend && npx nx run my-orri:dev -- --host 0.0.0.0 --port 5201",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {

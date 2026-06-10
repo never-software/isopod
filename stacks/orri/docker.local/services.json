@@ -1,0 +1,61 @@
+{
+  "_comment": "Single source of truth for orri's dev services. isopod regenerates code-server/settings.json (startupTerminals.terminals), code-server/tasks.json, services-start.sh, and hooks/urls from this file on every `isopod up`. NOTE: every service here is autoStart:false — orri launches them itself in workspace-start.sh as the 'dev' user with dependency sequencing (pnpm/bundle install waits + first-boot DB seeding) that a flat manifest can't express. This manifest drives the *view* surfaces (startup terminals, command-palette tasks, URL list) plus log pre-creation; it does not own the launch.",
+  "urlHost": "ip-orri-${FEATURE_NAME}.orb.local",
+  "services": [
+    {
+      "id": "ide",
+      "displayName": "IDE",
+      "port": 8443,
+      "protocol": "https",
+      "urlLabel": "IDE",
+      "tailInTerminal": false,
+      "autoStart": false
+    },
+    {
+      "id": "claude",
+      "displayName": "Claude",
+      "terminalCommand": "cd /workspace && claude",
+      "autoStart": false
+    },
+    {
+      "id": "rails-dev",
+      "displayName": "Rails (dev)",
+      "port": 3000,
+      "urlLabel": "API dev",
+      "workdir": "/workspace/api",
+      "logPath": "/tmp/rails-dev.log",
+      "startCommand": "rm -f tmp/pids/server.pid; bundle exec rails server -b 0.0.0.0 -p 3000",
+      "autoStart": false
+    },
+    {
+      "id": "rails-ci",
+      "displayName": "Rails (CI)",
+      "port": 3001,
+      "urlLabel": "API CI",
+      "workdir": "/workspace/api",
+      "logPath": "/tmp/rails-ci.log",
+      "startCommand": "rm -f tmp/pids/server-ci.pid; RAILS_ENV=ci bundle exec rails server -b 0.0.0.0 -p 3001 -P tmp/pids/server-ci.pid",
+      "autoStart": false
+    },
+    {
+      "id": "vite-hub",
+      "displayName": "Vite (hub)",
+      "port": 5200,
+      "urlLabel": "Hub",
+      "workdir": "/workspace/frontend",
+      "logPath": "/tmp/vite-hub.log",
+      "startCommand": "npx nx run hub:dev -- --host 0.0.0.0 --port 5200",
+      "autoStart": false
+    },
+    {
+      "id": "vite-my-orri",
+      "displayName": "Vite (my-orri)",
+      "port": 5201,
+      "urlLabel": "MyOrri",
+      "workdir": "/workspace/frontend",
+      "logPath": "/tmp/vite-my-orri.log",
+      "startCommand": "npx nx run my-orri:dev -- --host 0.0.0.0 --port 5201",
+      "autoStart": false
+    }
+  ]
+}

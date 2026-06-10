@@ -170,6 +170,21 @@ as_dev() {
 # ── Remove stale .git at /workspace (prevents phantom "workspace" repo in SCM)
 rm -rf /workspace/.git
 
+# ── Managed services (view surfaces from services.json) ───────────────────────
+# services-start.sh is generated host-side from docker.local/services.json and
+# bind-mounted. Orri's services are marked autoStart:false there — they're still
+# launched below as the 'dev' user with their dependency sequencing (pnpm/bundle
+# waits + first-boot seeding), which a flat manifest can't express. The manifest
+# is the source of truth for the *view* surfaces (startup terminals, tasks, URL
+# list). We only call precreate_logs() here: it touches every service log BEFORE
+# code-server boots, so the startup terminals' `tail -F` attach immediately
+# instead of racing the services that write those logs later in this script.
+SERVICES_RUNNER=/usr/local/bin/services-start.sh
+if [ -f "$SERVICES_RUNNER" ]; then
+  source "$SERVICES_RUNNER"
+  type precreate_logs &>/dev/null && precreate_logs || true
+fi
+
 # ── code-server (browser-based VS Code) ──────────────────────────────────────
 # Runs as 'dev' so every terminal, task, and tailed log inherits that user —
 # no more root/dev split when restarting services from inside the IDE.

@@ -1,10 +1,10 @@
 #!/bin/bash
+# GENERATED from services.json — do not edit; edit services.json and re-run isopod up.
+# hooks/urls — service URLs for display after create/up (one per line: label<TAB>url).
 set -euo pipefail
 
-HOST="ip-orri-${FEATURE_NAME}.orb.local"
-
-printf "IDE\thttps://${HOST}:8443\n"
-printf "API dev\thttp://${HOST}:3000\n"
-printf "API CI\thttp://${HOST}:3001\n"
-printf "Hub\thttp://${HOST}:5200\n"
-printf "MyOrri\thttp://${HOST}:5201\n"
+printf '%s\t%s\n' IDE "https://ip-orri-${FEATURE_NAME}.orb.local:8443"
+printf '%s\t%s\n' 'API dev' "http://ip-orri-${FEATURE_NAME}.orb.local:3000"
+printf '%s\t%s\n' 'API CI' "http://ip-orri-${FEATURE_NAME}.orb.local:3001"
+printf '%s\t%s\n' Hub "http://ip-orri-${FEATURE_NAME}.orb.local:5200"
+printf '%s\t%s\n' MyOrri "http://ip-orri-${FEATURE_NAME}.orb.local:5201"

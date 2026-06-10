@@ -53,6 +53,7 @@ services:
       - ${SSH_AUTH_SOCK}:/ssh-agent
       - __DOCKER_DIR__/code-server:/home/dev/.local/share/code-server/User:delegated
       - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
+      - __DOCKER_DIR__/services-start.sh:/usr/local/bin/services-start.sh:ro
       - __DOCKER_DIR__/workspace-start.sh:/usr/local/bin/workspace-start.sh:ro
       - __DOCKER_DIR__/certs:/certs:ro
       - __DOCKER_DIR__/extensions/startup-terminals/startup-terminals-1.0.0.vsix:/tmp/startup-terminals.vsix:ro
