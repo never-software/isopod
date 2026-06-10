@@ -65,14 +65,14 @@ export function PodList(props: { stack?: string }) {
     }
   }
 
-  async function handleDelete(pod: Pod) {
+  async function handleDelete(pod: Pod, deleteFiles: boolean) {
     setActionPod(pod.name);
     setErrorInfo(null);
     setLogs([]);
     setStatusMessage("Removing...");
     appendLog(`Removing pod: ${pod.name}`);
     try {
-      await podRemove(pod.name, (msg) => {
+      await podRemove(pod.name, deleteFiles, (msg) => {
         setStatusMessage(msg);
         appendLog(msg);
       });
@@ -156,7 +156,7 @@ export function PodList(props: { stack?: string }) {
                               error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
                               onUp={() => handleAction(pod, "up")}
                               onDown={() => handleAction(pod, "down")}
-                              onDelete={() => handleDelete(pod)}
+                              onDelete={(deleteFiles) => handleDelete(pod, deleteFiles)}
                             />
                           )}
                         </For>
@@ -179,7 +179,7 @@ export function PodList(props: { stack?: string }) {
                     error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
                     onUp={() => handleAction(pod, "up")}
                     onDown={() => handleAction(pod, "down")}
-                    onDelete={() => handleDelete(pod)}
+                    onDelete={(deleteFiles) => handleDelete(pod, deleteFiles)}
                   />
                 )}
               </For>
@@ -238,10 +238,11 @@ function PodCard(props: {
   error: string | null;
   onUp: () => void;
   onDown: () => void;
-  onDelete: () => void;
+  onDelete: (deleteFiles: boolean) => void;
 }) {
   const isRunning = () => props.pod.container.state === "running";
   const [confirmDelete, setConfirmDelete] = createSignal(false);
+  const [deleteFiles, setDeleteFiles] = createSignal(true);
   const [warnings, setWarnings] = createSignal<RemoveWarning[]>([]);
   const [loadingWarnings, setLoadingWarnings] = createSignal(false);
 
@@ -354,7 +355,11 @@ function PodCard(props: {
       <Show when={confirmDelete()}>
         <div class="mt-3 border border-red-900/50 rounded-lg bg-red-950/30 p-3">
           <Show when={warnings().length > 0}>
-            <p class="text-xs text-red-400 font-medium mb-2">Unsaved work that will be permanently lost:</p>
+            <p class="text-xs text-red-400 font-medium mb-2">
+              {deleteFiles()
+                ? "Unsaved work that will be permanently lost:"
+                : "Unsaved work in this pod (kept on disk if files are kept):"}
+            </p>
             <div class="space-y-1 mb-3">
               <For each={warnings()}>
                 {(w) => (
@@ -368,12 +373,21 @@ function PodCard(props: {
           <Show when={warnings().length === 0}>
             <p class="text-xs text-zinc-400 mb-3">No unsaved work detected. Safe to remove.</p>
           </Show>
+          <label class="flex items-center gap-2 text-xs text-zinc-400 mb-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              class="accent-red-500"
+              checked={deleteFiles()}
+              onChange={(e) => setDeleteFiles(e.currentTarget.checked)}
+            />
+            Also delete folder contents (repo clones on disk)
+          </label>
           <div class="flex items-center gap-2">
             <button
               class="px-2.5 py-1 text-xs rounded bg-red-900/50 text-red-400 hover:bg-red-900 transition-colors"
-              onClick={() => { setConfirmDelete(false); props.onDelete(); }}
+              onClick={() => { setConfirmDelete(false); props.onDelete(deleteFiles()); }}
             >
-              Remove pod
+              {deleteFiles() ? "Remove pod" : "Remove pod, keep files"}
             </button>
             <button
               class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"

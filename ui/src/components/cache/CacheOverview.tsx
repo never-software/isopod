@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
-import { fetchCache, deleteCacheLayer, destroyCache, buildStack } from "../../api";
+import { fetchCache, deleteCacheLayer, destroyCache, buildStack, rebuildCache } from "../../api";
 import { createPolledKeyedResource } from "../../lib/poll";
 import type { LayerInfo } from "../../types";
 
@@ -23,21 +23,33 @@ export function CacheOverview(props: { stack: string }) {
     logEnd?.scrollIntoView({ behavior: "smooth" });
   }
 
-  async function handleBuild() {
+  const appendBuildLog = (msg: string) => {
+    setBuildLog((prev) => [...prev, msg]);
+    scrollLog();
+  };
+
+  async function runBuild(action: () => Promise<void>) {
     setBuilding(true);
     setBuildLog([]);
     setBuildError(null);
     try {
-      await buildStack(props.stack, (msg) => {
-        setBuildLog((prev) => [...prev, msg]);
-        scrollLog();
-      });
+      await action();
       refetch();
     } catch (e: any) {
       setBuildError(e.message);
     } finally {
       setBuilding(false);
     }
+  }
+
+  /** Update: cached build — fills in stale / not-built layers, fresh layers untouched. */
+  const handleUpdate = () =>
+    runBuild(() => buildStack(props.stack, undefined, appendBuildLog));
+
+  /** Rebuild: force layers to rebuild — one layer (cascading) or, with no layer, everything. */
+  function handleRebuild(layer?: string) {
+    if (!layer && !confirm("Force-rebuild ALL layers from scratch? Fresh layers will be rebuilt too.")) return;
+    return runBuild(() => rebuildCache(props.stack, layer, undefined, appendBuildLog));
   }
 
   function toggleExpand(name: string) {
@@ -155,13 +167,6 @@ export function CacheOverview(props: { stack: string }) {
     <div>
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-xl font-semibold">Base Image</h2>
-        <button
-          class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-50"
-          onClick={handleBuild}
-          disabled={building() || deleting() !== null}
-        >
-          {building() ? "Building..." : cache()?.image.exists ? "Rebuild" : "Build"}
-        </button>
       </div>
 
       {/* Build output — always visible, above everything else */}
@@ -235,17 +240,33 @@ export function CacheOverview(props: { stack: string }) {
 
         {/* Layer table */}
         <Show when={cache()?.layers && cache()!.layers.length > 0}>
-          <Show when={cache()?.image.exists}>
-            <div class="flex justify-end mb-2">
+          <div class="flex justify-end items-center gap-2 mb-2">
+            <button
+              class="px-2.5 py-1 text-xs rounded bg-emerald-900/50 text-emerald-400 hover:bg-emerald-900 transition-colors disabled:opacity-50"
+              onClick={handleUpdate}
+              disabled={building() || deleting() !== null}
+              title="Build only stale or missing layers; fresh layers stay cached"
+            >
+              {building() ? "Building..." : cache()?.image.exists ? "Update" : "Build"}
+            </button>
+            <Show when={cache()?.image.exists}>
+              <button
+                class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                onClick={() => handleRebuild()}
+                disabled={building() || deleting() !== null}
+                title="Force-rebuild every layer from scratch"
+              >
+                Rebuild
+              </button>
               <button
                 class="px-2.5 py-1 text-xs rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors disabled:opacity-50"
                 onClick={handleDestroy}
-                disabled={deleting() !== null}
+                disabled={building() || deleting() !== null}
               >
                 {deleting() === "__destroy__" ? "Destroying..." : "Destroy All"}
               </button>
-            </div>
-          </Show>
+            </Show>
+          </div>
           <div class="border border-zinc-800 rounded-lg overflow-hidden">
             <table class="w-full text-sm">
               <thead>
@@ -256,7 +277,7 @@ export function CacheOverview(props: { stack: string }) {
                   <th class="text-left px-4 py-2.5 font-medium">Cache Layers</th>
                   <th class="text-left px-4 py-2.5 font-medium">Status</th>
                   <th class="text-left px-4 py-2.5 font-medium">Version</th>
-                  <th class="w-16"></th>
+                  <th class="w-40"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-zinc-800/50">
@@ -308,15 +329,26 @@ export function CacheOverview(props: { stack: string }) {
                           {layer.status === "not built" ? "\u2014" : layer.version}
                         </td>
                         <td class="px-4 py-2.5 text-right">
-                          <Show when={layer.status === "fresh"}>
+                          <div class="flex items-center justify-end gap-2">
                             <button
-                              class="text-xs text-red-400/70 hover:text-red-400 transition-colors disabled:opacity-50"
-                              onClick={(e: MouseEvent) => { e.stopPropagation(); handleInvalidate(layer.name); }}
-                              disabled={deleting() !== null}
+                              class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                              onClick={(e: MouseEvent) => { e.stopPropagation(); handleRebuild(layer.name); }}
+                              disabled={building() || deleting() !== null}
+                              title="Force-rebuild from this layer (cascades to dependents)"
                             >
-                              {deleting() === layer.name ? "..." : "Invalidate"}
+                              Rebuild
                             </button>
-                          </Show>
+                            <Show when={layer.status === "fresh"}>
+                              <button
+                                class="px-2.5 py-1 text-xs rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors disabled:opacity-50"
+                                onClick={(e: MouseEvent) => { e.stopPropagation(); handleInvalidate(layer.name); }}
+                                disabled={building() || deleting() !== null}
+                                title="Mark this layer stale (no build)"
+                              >
+                                {deleting() === layer.name ? "..." : "Destroy"}
+                              </button>
+                            </Show>
+                          </div>
                         </td>
                       </tr>
                     );

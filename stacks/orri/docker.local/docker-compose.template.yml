@@ -61,6 +61,10 @@ services:
       # at startup with correct perms (StrictModes refuses host-side ownership).
       - __DOCKER_DIR__/ssh:/opt/stack-ssh:ro
       - __DOCKER_DIR__/gitconfig:/home/dev/.gitconfig:ro
+      # Shared /home/dev entries (.home-sharing manifest): live overlays of the
+      # stack-owned stacks/<stack>/home source, so e.g. a Claude login shared
+      # once propagates to every pod. Empty/absent line when nothing is shared.
+__HOME_TEMPLATE_VOLUMES__
       # Pod root mounted at /workspace. Stack workspace template files are copied
       # into the pod root by isopod without overwriting pod-local edits:
 __WORKSPACE_TEMPLATE_VOLUMES__

@@ -67,6 +67,14 @@ export const config = {
     return resolve(this.stackRoot(stack), "workspace");
   },
 
+  // Host-side source for the "home" sharing scope: shared /home/dev entries are
+  // bind-mounted live from here into every pod. Gitignored under /stacks/, so a
+  // credential at rest here is never committed. Starts empty (home is otherwise
+  // a per-pod volume); ensureSharedHomePaths seeds shared paths on up.
+  stackHomeTemplateDir(stack: string): string {
+    return resolve(this.stackRoot(stack), "home");
+  },
+
   imageFor(stack: string): string {
     return `ipws-${stack}`;
   },

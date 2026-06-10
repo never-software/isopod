@@ -8,6 +8,7 @@ import {
   layerStatus,
   layerContent,
   layerExists,
+  layerNames,
   layersFrom,
   layersAfter,
   layerDeleteVersion,
@@ -69,7 +70,12 @@ export function cacheList(stack?: string): CacheInfo {
   return { layers, image, isDAG: dag };
 }
 
-export async function cacheRebuild(layer: string, onLog?: (msg: string) => void, stack?: string): Promise<void> {
+export async function cacheRebuild(
+  layer: string,
+  onLog?: (msg: string) => void,
+  stack?: string,
+  opts: { branch?: string } = {},
+): Promise<void> {
   const log = onLog || (() => {});
   const dockerDir = config.stackDockerDir(stack!);
 
@@ -93,7 +99,28 @@ export async function cacheRebuild(layer: string, onLog?: (msg: string) => void,
   }
 
   log(`Rebuilding workspace image from '${layer}'...`);
-  await buildAll(log, stack);
+  await buildAll(log, stack, opts);
+  log("Rebuild complete. Run 'isopod up <name>' to apply to running pods.");
+}
+
+/** Force-rebuild every layer: invalidate all stored hashes, then build. */
+export async function cacheRebuildAll(
+  onLog?: (msg: string) => void,
+  stack?: string,
+  opts: { branch?: string } = {},
+): Promise<void> {
+  const log = onLog || (() => {});
+  const dockerDir = config.stackDockerDir(stack!);
+
+  requireDocker();
+
+  for (const l of layerNames(dockerDir)) {
+    layerDeleteVersion(l, dockerDir);
+    layerSaveBustToken(l, dockerDir);
+  }
+
+  log("Rebuilding workspace image from scratch (all layers)...");
+  await buildAll(log, stack, opts);
   log("Rebuild complete. Run 'isopod up <name>' to apply to running pods.");
 }
 

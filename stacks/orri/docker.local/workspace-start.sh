@@ -170,6 +170,21 @@ as_dev() {
 # ── Remove stale .git at /workspace (prevents phantom "workspace" repo in SCM)
 rm -rf /workspace/.git
 
+# ── MCP server dependencies ───────────────────────────────────────────────────
+# The workspace template seeds .claude/mcp-servers/* (server.js + lockfile) but
+# never node_modules (template sync skips them), so install on first boot or
+# Claude's MCP connection dies with ERR_MODULE_NOT_FOUND.
+for mcp_pkg in /workspace/.claude/mcp-servers/*/package.json; do
+  [ -f "$mcp_pkg" ] || continue
+  mcp_dir="$(dirname "$mcp_pkg")"
+  if [ ! -d "$mcp_dir/node_modules" ]; then
+    echo "Installing MCP server deps: $(basename "$mcp_dir")..."
+    as_dev "cd '$mcp_dir' && npm ci --omit=dev" > /tmp/mcp-install.log 2>&1 \
+      && echo "✓ MCP deps installed: $(basename "$mcp_dir")" \
+      || echo "⚠ MCP deps install failed for $(basename "$mcp_dir") (see /tmp/mcp-install.log)"
+  fi
+done
+
 # ── Managed services (view surfaces from services.json) ───────────────────────
 # services-start.sh is generated host-side from docker.local/services.json and
 # bind-mounted. Orri's services are marked autoStart:false there — they're still

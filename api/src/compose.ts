@@ -3,7 +3,7 @@ import { join } from "path";
 import { execSync } from "child_process";
 import { config } from "./config.js";
 import { containerName } from "./docker.js";
-import { sharedWorkspaceMounts } from "./sharing.js";
+import { sharedWorkspaceMounts, sharedHomeMounts } from "./sharing.js";
 
 /**
  * Generate (or regenerate) docker-compose.yml for a pod from the current template.
@@ -60,23 +60,30 @@ export function generateCompose(
     ...sharedWorkspaceMounts(stack),
   ].join("\n");
 
+  // Shared home overlays. No root mount — /home/dev is the named `home:` volume,
+  // already declared in the template; the home scope contributes overlay mounts
+  // only. Empty by default, so the __HOME_TEMPLATE_VOLUMES__ line is dropped
+  // entirely (not left as a blank YAML line) when nothing is shared.
+  const homeTemplateVolumes = sharedHomeMounts(stack);
+
   // Read template and substitute
   let template = readFileSync(templateFile, "utf-8");
   const repoList = repos.join(",");
 
-  // Replace line-based placeholders
+  // Replace line-based placeholders (flatMap so an empty home placeholder drops)
   template = template
     .split("\n")
-    .map((line) => {
-      if (line.includes("__REPO_VOLUMES__")) return repoVolumes;
-      if (line.includes("__WORKSPACE_TEMPLATE_VOLUMES__")) return workspaceTemplateVolumes;
-      return line
+    .flatMap((line) => {
+      if (line.includes("__REPO_VOLUMES__")) return [repoVolumes];
+      if (line.includes("__WORKSPACE_TEMPLATE_VOLUMES__")) return [workspaceTemplateVolumes];
+      if (line.includes("__HOME_TEMPLATE_VOLUMES__")) return homeTemplateVolumes;
+      return [line
         .replace(/__CONTAINER_NAME__/g, containerName(featureName, stack))
         .replace(/__FEATURE_NAME__/g, featureName)
         .replace(/__STACK_NAME__/g, stack)
         .replace(/__DOCKER_DIR__/g, dockerDir)
         .replace(/__IMAGE_NAME__/g, imageName)
-        .replace(/__REPO_LIST__/g, repoList);
+        .replace(/__REPO_LIST__/g, repoList)];
     })
     .join("\n");
 

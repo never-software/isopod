@@ -40,6 +40,10 @@ services:
       - __DOCKER_DIR__/services-start.sh:/usr/local/bin/services-start.sh:ro
       # mkcert certificates (generate with: mkcert "*.orb.local" localhost 127.0.0.1)
       - __DOCKER_DIR__/certs:/certs:ro
+      # Shared home entries (.home-sharing manifest): live overlays of the
+      # stack-owned stacks/<stack>/home source onto the home dir (matches the
+      # home volume's mount target above). Empty line when nothing is shared.
+__HOME_TEMPLATE_VOLUMES__
       # Pod root mounted at /workspace. Stack workspace template files are copied
       # into the pod root by isopod without overwriting pod-local edits:
 __WORKSPACE_TEMPLATE_VOLUMES__

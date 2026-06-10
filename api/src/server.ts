@@ -5,14 +5,15 @@ import { resolve, join, extname } from "path";
 import { config } from "./config.js";
 import { listPods, createPod, podUp, podDown, podExists, validatePodName, getRemoveWarnings, removePod } from "./pods.js";
 import { discoverRepos } from "./repos.js";
-import { defaultBranchFor } from "./git.js";
+import { defaultBranchFor, listRemoteBranches } from "./git.js";
 import { dbList, dbSave, dbRestore } from "./db.js";
-import { cacheList, cacheDelete, cacheDestroy } from "./cache.js";
+import { cacheList, cacheDelete, cacheDestroy, cacheRebuild, cacheRebuildAll } from "./cache.js";
 import { buildAll } from "./docker.js";
 import { getStatus, deleteCollection, deleteBranch, getCollectionBranches, getAllBranches } from "./indexer/qdrant.js";
 import { discoverWatchTargets, startDaemon, stopDaemon, getDisabledTargets, toggleTarget, setDisabledTargets, targetKey } from "./indexer/watcher.js";
-import { buildWorkspaceTree, loadSharingManifest, writeSharingManifest, isSafeRelPath } from "./sharing.js";
-import type { SharingMode } from "./sharing.js";
+import { buildScopeTree, loadManifest, writeManifest, isSafeRelPath, workspaceScope, homeScope,
+  listPodHomeLevel, homeReservedTargets, isHomeReserved, seedSharedHomePaths } from "./sharing.js";
+import type { SharingMode, SharingScope } from "./sharing.js";
 
 // ── Server ──────────────────────────────────────────────────────────
 
@@ -79,8 +80,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/stacks") return apiStacks(res);
     if (path === "/api/settings") return apiGetSettings(res);
     if (path === "/api/cache") return apiCache(res, url);
-    if (path === "/api/workspace-tree") return apiWorkspaceTree(res, url);
-    if (path === "/api/workspace-sharing") return apiGetSharing(res, url);
+    if (path === "/api/workspace-tree") return apiScopeTree(res, url, workspaceScope);
+    if (path === "/api/workspace-sharing") return apiGetScopeSharing(res, url, workspaceScope);
+    if (path === "/api/home-tree") return apiScopeTree(res, url, homeScope);
+    if (path === "/api/home-tree-level") return apiHomeTreeLevel(res, url);
+    if (path === "/api/home-sharing") return apiGetScopeSharing(res, url, homeScope);
 
     const branchesMatch = path.match(/^\/api\/collection\/(.+)\/branches$/);
     if (branchesMatch) return apiCollectionBranches(res, decodeURIComponent(branchesMatch[1]));
@@ -95,6 +99,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (warningsMatch) return apiPodWarnings(res, decodeURIComponent(warningsMatch[1]));
 
     if (path === "/api/stacks/detail") return apiStacksDetail(res);
+
+    const stackBranchesMatch = path.match(/^\/api\/stacks\/(.+)\/branches$/);
+    if (stackBranchesMatch) return apiStackBranches(res, decodeURIComponent(stackBranchesMatch[1]));
   }
 
   if (method === "POST") {
@@ -125,10 +132,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (path === "/api/settings") return apiUpdateSettings(res, body);
     if (path === "/api/cache/delete") return apiCacheDelete(res, body);
     if (path === "/api/cache/destroy") return apiCacheDestroy(res, body);
-    if (path === "/api/workspace-sharing") return apiSetSharing(res, body);
+    if (path === "/api/cache/rebuild") return apiCacheRebuild(res, body);
+    if (path === "/api/workspace-sharing") return apiSetScopeSharing(res, body, workspaceScope);
+    if (path === "/api/home-sharing") return apiSetScopeSharing(res, body, homeScope);
 
     const buildStackMatch = path.match(/^\/api\/stacks\/(.+)\/build$/);
-    if (buildStackMatch) return apiStackBuild(res, decodeURIComponent(buildStackMatch[1]));
+    if (buildStackMatch) return apiStackBuild(res, decodeURIComponent(buildStackMatch[1]), body);
 
     const deleteColMatch = path.match(/^\/api\/collection\/(.+)\/delete$/);
     if (deleteColMatch) return apiDeleteCollection(res, decodeURIComponent(deleteColMatch[1]));
@@ -143,7 +152,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
     if (downMatch) return apiPodDown(res, decodeURIComponent(downMatch[1]));
 
     const removeMatch = path.match(/^\/api\/pods\/(.+)\/remove$/);
-    if (removeMatch) return apiPodRemove(res, decodeURIComponent(removeMatch[1]));
+    if (removeMatch) return apiPodRemove(res, decodeURIComponent(removeMatch[1]), body);
   }
 
   json(res, 404, { error: "Not found" });
@@ -561,12 +570,29 @@ function apiStacksDetail(res: ServerResponse): void {
   json(res, 200, details);
 }
 
-async function apiStackBuild(res: ServerResponse, stackName: string): Promise<void> {
+// Branch names come from user input; allow only plain ref-ish names (no
+// leading dash, no whitespace) so they can never be parsed as flags.
+const VALID_BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+
+function resolveBranch(res: ServerResponse, branch: unknown): string | undefined | null {
+  if (branch == null || branch === "") return undefined;
+  if (typeof branch !== "string" || !VALID_BRANCH.test(branch)) {
+    json(res, 400, { error: "Invalid branch name" });
+    return null;
+  }
+  return branch;
+}
+
+async function apiStackBuild(res: ServerResponse, stackName: string, body: any): Promise<void> {
+  const branch = resolveBranch(res, body?.branch);
+  if (branch === null) return;
+
   res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
   try {
     await buildAll(
       (msg) => res.write(JSON.stringify({ type: "log", message: msg }) + "\n"),
       stackName,
+      { branch },
     );
     res.write(JSON.stringify({ type: "done" }) + "\n");
   } catch (error: any) {
@@ -574,6 +600,43 @@ async function apiStackBuild(res: ServerResponse, stackName: string): Promise<vo
     res.write(JSON.stringify({ type: "error", message: msg }) + "\n");
   }
   res.end();
+}
+
+async function apiCacheRebuild(res: ServerResponse, body: any): Promise<void> {
+  const stack = resolveStack(res, body?.stack);
+  if (!stack) return;
+  const branch = resolveBranch(res, body?.branch);
+  if (branch === null) return;
+  const layer = typeof body?.layer === "string" && body.layer ? body.layer : undefined;
+
+  res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
+  const log = (msg: string) => res.write(JSON.stringify({ type: "log", message: msg }) + "\n");
+  try {
+    if (layer) {
+      await cacheRebuild(layer, log, stack, { branch });
+    } else {
+      await cacheRebuildAll(log, stack, { branch });
+    }
+    res.write(JSON.stringify({ type: "done" }) + "\n");
+  } catch (error: any) {
+    const msg = error.stderr?.toString().trim() || error.message;
+    res.write(JSON.stringify({ type: "error", message: msg }) + "\n");
+  }
+  res.end();
+}
+
+function apiStackBranches(res: ServerResponse, stackName: string): void {
+  const stack = resolveStack(res, stackName);
+  if (!stack) return;
+
+  const reposDir = config.stackReposDir(stack);
+  const branches = new Set<string>();
+  for (const repo of discoverRepos(reposDir)) {
+    for (const branch of listRemoteBranches(join(reposDir, repo))) {
+      branches.add(branch);
+    }
+  }
+  json(res, 200, [...branches].sort());
 }
 
 async function apiPodUp(res: ServerResponse, podName: string): Promise<void> {
@@ -612,12 +675,13 @@ function apiPodWarnings(res: ServerResponse, podName: string): void {
   }
 }
 
-function apiPodRemove(res: ServerResponse, podName: string): void {
+function apiPodRemove(res: ServerResponse, podName: string, body: any): void {
+  const deleteFiles = body?.deleteFiles !== false;
   res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
   try {
     removePod(podName, (msg) => {
       res.write(JSON.stringify({ type: "log", message: msg }) + "\n");
-    });
+    }, { deleteFiles });
     res.write(JSON.stringify({ type: "done" }) + "\n");
   } catch (error: any) {
     res.write(JSON.stringify({ type: "error", message: error.message }) + "\n");
@@ -646,25 +710,41 @@ function resolveStack(res: ServerResponse, stack: unknown): string | null {
   return stack;
 }
 
-function apiWorkspaceTree(res: ServerResponse, url: URL): void {
-  const stack = resolveStack(res, url.searchParams.get("stack"));
-  if (!stack) return;
-  json(res, 200, buildWorkspaceTree(stack));
+// The home scope browses a live running pod's /home/dev. Use the requested pod
+// if it's running in this stack, else the first running pod, else null (UI shows
+// "start a pod"). Browsing and seeding must use the same pod, so callers thread
+// the result through.
+function resolveReferencePod(stack: string, requested: string | null): string | null {
+  const running = listPods()
+    .filter((p) => p.stack === stack && p.container.state === "running")
+    .map((p) => p.name);
+  if (requested && running.includes(requested)) return requested;
+  return running[0] ?? null;
 }
 
-function apiGetSharing(res: ServerResponse, url: URL): void {
+// Sharing handlers are parameterized by a scope factory (workspaceScope |
+// homeScope) so /workspace and /home share one implementation. The scope's
+// rootDir bounds isSafeRelPath; the manifest is read/written per scope.
+function apiScopeTree(res: ServerResponse, url: URL, scopeOf: (s: string) => SharingScope): void {
   const stack = resolveStack(res, url.searchParams.get("stack"));
   if (!stack) return;
-  const m = loadSharingManifest(stack);
+  json(res, 200, buildScopeTree(scopeOf(stack), stack));
+}
+
+function apiGetScopeSharing(res: ServerResponse, url: URL, scopeOf: (s: string) => SharingScope): void {
+  const stack = resolveStack(res, url.searchParams.get("stack"));
+  if (!stack) return;
+  const m = loadManifest(scopeOf(stack), stack);
   const runningPods = listPods()
     .filter((p) => p.stack === stack && p.container.state === "running")
     .map((p) => p.name);
   json(res, 200, { default: m.default, overrides: m.overrides, runningPods });
 }
 
-function apiSetSharing(res: ServerResponse, body: any): void {
+function apiSetScopeSharing(res: ServerResponse, body: any, scopeOf: (s: string) => SharingScope): void {
   const stack = resolveStack(res, body?.stack);
   if (!stack) return;
+  const scope = scopeOf(stack);
 
   const def = body?.default;
   if (def !== "shared" && def !== "local") {
@@ -678,27 +758,68 @@ function apiSetSharing(res: ServerResponse, body: any): void {
     return;
   }
 
-  const root = config.stackWorkspaceTemplateDir(stack);
+  // Home scope: refuse sharing stack/runtime-managed entries (.ssh would fan a
+  // pod's private keys out to every pod; .gitconfig etc. fight their bind mount).
+  const reserved = scope.id === "home" ? homeReservedTargets(stack) : null;
+
   const clean: Record<string, SharingMode> = {};
   for (const [key, val] of Object.entries(overrides)) {
     if (val !== "shared" && val !== "local") {
       json(res, 400, { error: `invalid mode '${val}' for '${key}'` });
       return;
     }
-    if (!isSafeRelPath(key, root)) {
+    if (!isSafeRelPath(key, scope.rootDir)) {
       json(res, 400, { error: `invalid path: '${key}'` });
+      return;
+    }
+    if (val === "shared" && reserved && isHomeReserved(key, reserved)) {
+      json(res, 400, { error: `'${key}' is stack-managed and cannot be shared` });
       return;
     }
     clean[key] = val;
   }
 
   try {
-    writeSharingManifest(stack, { default: def, overrides: clean });
+    writeManifest(scope, stack, { default: def, overrides: clean });
   } catch (err: any) {
     json(res, 500, { error: err.message });
     return;
   }
-  json(res, 200, { ok: true, default: def, overrides: clean });
+
+  // Home scope: seed any newly-shared path's content from the reference pod so
+  // its overlay isn't an empty dir. Best-effort — a failed/absent seed must not
+  // fail the manifest write (the up-time path retries). Surfaced via `seededFrom`.
+  let seededFrom: string | null = null;
+  if (scope.id === "home") {
+    seededFrom = resolveReferencePod(stack, typeof body?.pod === "string" ? body.pod : null);
+    if (seededFrom) {
+      try { seedSharedHomePaths(stack, seededFrom); } catch { /* best-effort */ }
+    }
+  }
+  json(res, 200, { ok: true, default: def, overrides: clean, seededFrom });
+}
+
+// GET /api/home-tree-level?stack=&pod=&path= — direct children of /home/dev/<path>
+// in a running pod (lazy: the UI fetches one level per expand). Workspace stays
+// eager via /api/workspace-tree; this is home-only.
+function apiHomeTreeLevel(res: ServerResponse, url: URL): void {
+  const stack = resolveStack(res, url.searchParams.get("stack"));
+  if (!stack) return;
+  const scope = homeScope(stack);
+  const rel = url.searchParams.get("path") ?? "";
+  if (rel !== "" && !isSafeRelPath(rel, scope.rootDir)) {
+    json(res, 400, { error: `invalid path: '${rel}'` });
+    return;
+  }
+  const pod = resolveReferencePod(stack, url.searchParams.get("pod"));
+  const m = loadManifest(scope, stack);
+  const reserved = [...homeReservedTargets(stack)];
+  if (!pod) {
+    json(res, 200, { pod: null, path: rel, default: m.default, truncated: false, nodes: [], reserved });
+    return;
+  }
+  const { nodes, truncated } = listPodHomeLevel(stack, pod, rel);
+  json(res, 200, { pod, path: rel, default: m.default, truncated, nodes, reserved });
 }
 
 // ── Static file serving ─────────────────────────────────────────────

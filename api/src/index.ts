@@ -8,25 +8,31 @@ export { config } from "./config.js";
 export { discoverRepos, resolveRepo, discoverPodRepos, listDirs } from "./repos.js";
 
 // Git
-export { defaultBranchFor, getCurrentBranch, createRepoClone, getChangedFiles, getDeletedFiles } from "./git.js";
+export { defaultBranchFor, listRemoteBranches, getCurrentBranch, createRepoClone, getChangedFiles, getDeletedFiles } from "./git.js";
 
 // Docker
 export {
   requireDocker, containerName, composeProject, composeFileFor, workspaceContainer,
-  composeUp, waitForContainer, getContainerStatuses,
+  composeUp, waitForContainer, getContainerStatuses, apiContainerUserArgs,
   buildImage, ensureImage, buildAll, fetchLatestMain, dockerCleanup,
 } from "./docker.js";
 
 // Compose
 export { generateCompose } from "./compose.js";
 
-// Workspace sharing
+// Workspace + home sharing
 export {
   loadSharingManifest, writeSharingManifest, sharingManifestPath,
   sharedWorkspaceMounts, buildWorkspaceTree, isSafeRelPath,
   parseSharingManifest, serializeSharingManifest, effectiveMode, dirState,
+  // scope-aware surface (workspace + home)
+  workspaceScope, homeScope, loadManifest, writeManifest, manifestPath,
+  buildScopeTree, sharedHomeMounts, buildHomeTree, ensureSharedHomePaths,
+  // live pod-home browsing (home scope)
+  parsePodHomeLevel, listPodHomeLevel, homeReservedTargets, isHomeReserved,
+  HOME_RESERVED_EXTRAS, pendingSharedHomeSeeds, seedSharedHomePaths,
 } from "./sharing.js";
-export type { SharingMode, SharingManifest, WorkspaceNode, WorkspaceTree, TriState } from "./sharing.js";
+export type { SharingMode, SharingManifest, WorkspaceNode, WorkspaceTree, TriState, SharingScope, SharingScopeId } from "./sharing.js";
 
 // Workspace
 export { setupWorkspace, teardownWorkspace, getUrls, waitForUrls } from "./workspace.js";
@@ -45,7 +51,7 @@ export { listPods, podExists, validatePodName, createPod, podUp, podDown, remove
 export { dbSave, dbRestore, dbList, dbDelete } from "./db.js";
 
 // Cache
-export { cacheList, cacheRebuild, cacheDelete, cacheDestroy } from "./cache.js";
+export { cacheList, cacheRebuild, cacheRebuildAll, cacheDelete, cacheDestroy } from "./cache.js";
 
 // Server
 export { startServer } from "./server.js";

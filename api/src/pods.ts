@@ -18,6 +18,7 @@ import {
 } from "./docker.js";
 import { generateCompose } from "./compose.js";
 import { generateServices } from "./services.js";
+import { ensureSharedHomePaths, seedSharedHomePaths, pendingSharedHomeSeeds, homeScope, loadManifest } from "./sharing.js";
 import {
   describeWorkspaceTemplateSync,
   isWorkspaceTemplateManaged,
@@ -346,6 +347,22 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
     } catch { /* base volume doesn't exist, skip */ }
   }
 
+  // Materialize host sources for any shared home entries before compose runs.
+  // Prefer seeding real content from ANOTHER running pod of the stack (so e.g. a
+  // shared .config carries that pod's files); fall back to ensureSharedHomePaths,
+  // which mkdirs empty sources (safe for .claude, which the app repopulates).
+  {
+    const homeManifest = loadManifest(homeScope(stackName), stackName);
+    const pending = pendingSharedHomeSeeds(homeScope(stackName).rootDir, homeManifest);
+    if (pending.length > 0) {
+      const donor = listPods().find(
+        (p) => p.stack === stackName && p.name !== name && p.container.state === "running",
+      );
+      if (donor) seedSharedHomePaths(stackName, donor.name, log);
+    }
+  }
+  ensureSharedHomePaths(stackName);
+
   generateCompose(name, { stack: stackName });
   generateServices(stackName);
 
@@ -471,8 +488,13 @@ export function getRemoveWarnings(name: string): RemoveWarning[] {
   return warnings;
 }
 
-export function removePod(name: string, onLog?: (msg: string) => void): void {
+export function removePod(
+  name: string,
+  onLog?: (msg: string) => void,
+  opts: { deleteFiles?: boolean } = {},
+): void {
   const log = onLog || (() => {});
+  const deleteFiles = opts.deleteFiles !== false;
   const stackName = findPodStack(name);
   const podDir = join(config.stackPodsDir(stackName), name);
 
@@ -497,13 +519,21 @@ export function removePod(name: string, onLog?: (msg: string) => void): void {
     log("Failed to remove container — it may not have been running");
   }
 
-  // Remove workspace clones
-  log("Removing workspace directory...");
-  rmSync(podDir, { recursive: true, force: true });
-  log("Directory cleaned up");
+  if (deleteFiles) {
+    // Remove workspace clones
+    log("Removing workspace directory...");
+    rmSync(podDir, { recursive: true, force: true });
+    log("Directory cleaned up");
+  } else {
+    log(`Keeping pod directory: ${podDir}`);
+  }
 
   dockerCleanup(log);
-  log(`Done! Pod '${name}' fully removed.`);
+  log(
+    deleteFiles
+      ? `Done! Pod '${name}' fully removed.`
+      : `Done! Container removed; 'isopod up ${name}' can recreate the pod from its kept files.`,
+  );
 }
 
 // ── Pod status ─────────────────────────────────────────────────────

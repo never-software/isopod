@@ -60,6 +60,27 @@ async function fastClone(src: string, dst: string, helper: string): Promise<void
 // ── Branch detection ────────────────────────────────────────────────
 
 /**
+ * List remote branch names for a repo (without the "origin/" prefix,
+ * excluding the symbolic HEAD entry). Returns [] on any failure.
+ */
+export function listRemoteBranches(repoPath: string): string[] {
+  try {
+    const out = execSync("git branch -r --format='%(refname:short)'", {
+      cwd: repoPath,
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+    return out
+      .split("\n")
+      .map((line) => line.trim().replace(/^'|'$/g, ""))
+      .filter((name) => name.startsWith("origin/") && !name.includes("HEAD"))
+      .map((name) => name.slice("origin/".length));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Detect the default branch for a repo (e.g. "main" or "master").
  */
 export function defaultBranchFor(repoPath: string): string {

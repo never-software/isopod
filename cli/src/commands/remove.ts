@@ -8,7 +8,8 @@ export const removeCommand = new Command("remove")
   .description("Remove a pod")
   .argument("<feature-name>", "Pod name")
   .option("--force", "Skip safety checks")
-  .action(async (featureName: string, opts: { force?: boolean }) => {
+  .option("--keep-files", "Remove the container and volumes but keep the pod directory")
+  .action(async (featureName: string, opts: { force?: boolean; keepFiles?: boolean }) => {
     try {
       if (!opts.force) {
         const warnings = getRemoveWarnings(featureName);
@@ -33,7 +34,7 @@ export const removeCommand = new Command("remove")
         }
       }
 
-      removePod(featureName, (msg) => info(msg));
+      removePod(featureName, (msg) => info(msg), { deleteFiles: !opts.keepFiles });
     } catch (err: any) {
       error(err.message);
     }

@@ -45,6 +45,25 @@ export function workspaceContainer(podName: string, stack: string): string {
   return containerName(podName, stack);
 }
 
+/**
+ * `docker exec` user flags for a workspace container. Stacks like orri run as a
+ * first-class 'dev' user; scaffold/example images run as the image default
+ * (root). Probe once and pass -u only when 'dev' exists, so exec works against
+ * both. (API-side mirror of cli/src/container-user.ts — the api can't import the
+ * cli package.)
+ */
+export function apiContainerUserArgs(container: string): string[] {
+  try {
+    execFileSync("docker", ["exec", container, "id", "-u", "dev"], {
+      stdio: "ignore",
+      timeout: 5000,
+    });
+    return ["-u", "dev"];
+  } catch {
+    return [];
+  }
+}
+
 // ── Docker daemon ──────────────────────────────────────────────────
 
 export function requireDocker(): void {
@@ -141,13 +160,21 @@ export async function waitForContainer(container: string, timeout = 30): Promise
 
 // ── Image building ─────────────────────────────────────────────────
 
-export function fetchLatestMain(onLog?: (msg: string) => void, stack?: string): void {
+export function fetchLatestMain(
+  onLog?: (msg: string) => void,
+  stack?: string,
+  branchOverride?: string,
+): void {
   const log = onLog || (() => {});
   const repoDirs = stack
     ? [config.stackReposDir(stack)]
     : config.listStacks().map(s => config.stackReposDir(s));
 
-  log("Fetching latest default branch for all repos...");
+  log(
+    branchOverride
+      ? `Fetching '${branchOverride}' for all repos...`
+      : "Fetching latest default branch for all repos...",
+  );
   for (const reposDir of repoDirs) {
     if (!existsSync(reposDir)) continue;
     for (const entry of readdirSync(reposDir, { withFileTypes: true })) {
@@ -169,14 +196,26 @@ export function fetchLatestMain(onLog?: (msg: string) => void, stack?: string): 
         continue;
       }
 
-      const branch = defaultBranchFor(repoDir);
+      let branch = branchOverride;
+      if (branch) {
+        try {
+          execFileSync("git", ["rev-parse", "--verify", `origin/${branch}`], {
+            cwd: repoDir, stdio: "ignore", timeout: 5000,
+          });
+        } catch {
+          log(`  ${entry.name} has no branch '${branch}' — using its default branch`);
+          branch = undefined;
+        }
+      }
+      branch ||= defaultBranchFor(repoDir) || undefined;
       if (!branch) {
         log(`  Could not determine default branch for ${entry.name} — skipping`);
         continue;
       }
 
       try {
-        execSync(`git checkout "${branch}" && git reset --hard "origin/${branch}"`, {
+        execFileSync("git", ["checkout", branch], { cwd: repoDir, stdio: "pipe", timeout: 15000 });
+        execFileSync("git", ["reset", "--hard", `origin/${branch}`], {
           cwd: repoDir, stdio: "pipe", timeout: 15000,
         });
       } catch {
@@ -184,7 +223,7 @@ export function fetchLatestMain(onLog?: (msg: string) => void, stack?: string): 
       }
     }
   }
-  log("All repos on latest default branch");
+  log(branchOverride ? `All repos on '${branchOverride}' (or their default)` : "All repos on latest default branch");
 }
 
 function runCacheHooks(dockerDir: string, reposDir: string, imageName: string, stack: string): string {
@@ -391,8 +430,12 @@ export async function ensureImage(onLog?: (msg: string) => void, stack?: string,
   }
 }
 
-export async function buildAll(onLog?: (msg: string) => void, stack?: string): Promise<void> {
-  fetchLatestMain(onLog, stack);
+export async function buildAll(
+  onLog?: (msg: string) => void,
+  stack?: string,
+  opts: { branch?: string } = {},
+): Promise<void> {
+  fetchLatestMain(onLog, stack, opts.branch);
   await buildImage(onLog, stack);
 }
 

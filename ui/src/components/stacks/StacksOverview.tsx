@@ -18,7 +18,7 @@ export function StacksOverview(props: { onSelectStack: (name: string) => void })
     setBuildLog([]);
     setBuildError(null);
     try {
-      await buildStack(name, (msg) => {
+      await buildStack(name, undefined, (msg) => {
         setBuildLog((prev) => [...prev, msg]);
         scrollLog();
       });

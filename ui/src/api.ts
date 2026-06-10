@@ -11,6 +11,7 @@ import type {
   RemoveWarning,
   Settings,
   WorkspaceTree,
+  WorkspaceNode,
   SharingManifest,
   SharingMode,
 } from "./types";
@@ -71,8 +72,8 @@ export const podDown = (name: string, onProgress?: (msg: string) => void) =>
   streamAction(`/pods/${encodeURIComponent(name)}/down`, onProgress);
 export const checkPodExists = (name: string) => get<{ exists: boolean }>(`/pods/${encodeURIComponent(name)}/exists`);
 export const podWarnings = (name: string) => get<RemoveWarning[]>(`/pods/${encodeURIComponent(name)}/warnings`);
-export const podRemove = (name: string, onProgress?: (msg: string) => void) =>
-  streamAction(`/pods/${encodeURIComponent(name)}/remove`, onProgress);
+export const podRemove = (name: string, deleteFiles: boolean, onProgress?: (msg: string) => void) =>
+  streamNdjson(`/pods/${encodeURIComponent(name)}/remove`, { deleteFiles }, onProgress);
 
 // ── Stacks ──────────────────────────────────────────────────────────
 
@@ -90,28 +91,8 @@ export interface StackDetail {
 
 export const fetchStacksDetail = () => get<StackDetail[]>("/stacks/detail");
 
-export async function buildStack(name: string, onProgress?: (msg: string) => void): Promise<void> {
-  const res = await fetch(`${BASE}/stacks/${encodeURIComponent(name)}/build`, { method: "POST" });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop()!;
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const event = JSON.parse(line);
-      if (event.type === "log" && onProgress) onProgress(event.message);
-      else if (event.type === "error") throw new Error(event.message);
-    }
-  }
-}
+export const buildStack = (name: string, branch?: string, onProgress?: (msg: string) => void) =>
+  streamNdjson(`/stacks/${encodeURIComponent(name)}/build`, { branch }, onProgress);
 
 // ── Repos ───────────────────────────────────────────────────────────
 
@@ -148,17 +129,43 @@ export const deleteCacheLayer = (layer: string, stack: string) =>
   post<{ ok: boolean; logs: string[] }>("/cache/delete", { layer, stack });
 export const destroyCache = (stack: string) =>
   post<{ ok: boolean; logs: string[] }>("/cache/destroy", { stack });
+export const rebuildCache = (stack: string, layer?: string, branch?: string, onProgress?: (msg: string) => void) =>
+  streamNdjson("/cache/rebuild", { stack, layer, branch }, onProgress);
 
-// ── Workspace sharing ───────────────────────────────────────────────
+// ── Sharing (workspace + home scopes) ───────────────────────────────
+// scope maps directly to the endpoint prefix: "workspace" → /workspace-tree,
+// /workspace-sharing; "home" → /home-tree, /home-sharing.
 
-export const fetchWorkspaceTree = (stack: string) =>
-  get<WorkspaceTree>(`/workspace-tree?stack=${encodeURIComponent(stack)}`);
-export const fetchSharing = (stack: string) =>
-  get<SharingManifest>(`/workspace-sharing?stack=${encodeURIComponent(stack)}`);
+export type SharingScopeId = "workspace" | "home";
+
+export const fetchSharingTree = (stack: string, scope: SharingScopeId = "workspace") =>
+  get<WorkspaceTree>(`/${scope}-tree?stack=${encodeURIComponent(stack)}`);
+export const fetchSharing = (stack: string, scope: SharingScopeId = "workspace") =>
+  get<SharingManifest>(`/${scope}-sharing?stack=${encodeURIComponent(stack)}`);
 export const updateSharing = (
   stack: string,
   manifest: { default: SharingMode; overrides: Record<string, SharingMode> },
-) => post<{ ok: boolean }>("/workspace-sharing", { stack, ...manifest });
+  scope: SharingScopeId = "workspace",
+  pod?: string | null,
+) => post<{ ok: boolean; seededFrom?: string | null }>(`/${scope}-sharing`, {
+  stack, ...manifest, ...(pod ? { pod } : {}),
+});
+
+// Home scope only: one directory level of a live running pod's /home/dev (lazy).
+export interface HomeLevel {
+  pod: string | null;        // resolved reference pod (null ⇒ none running)
+  path: string;              // echo of the requested rel ("" = root)
+  default: SharingMode;
+  truncated: boolean;        // children capped
+  nodes: WorkspaceNode[];    // direct children only (dirs have no `children`)
+  reserved: string[];        // stack-managed paths (non-toggleable)
+}
+export const fetchHomeLevel = (stack: string, pod: string | null, path = "") =>
+  get<HomeLevel>(
+    `/home-tree-level?stack=${encodeURIComponent(stack)}` +
+      (pod ? `&pod=${encodeURIComponent(pod)}` : "") +
+      `&path=${encodeURIComponent(path)}`,
+  );
 
 // ── Database ────────────────────────────────────────────────────────
 
