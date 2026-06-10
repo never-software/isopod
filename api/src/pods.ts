@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, copyFileSync } from "fs";
 import { join, relative, dirname } from "path";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { config } from "./config.js";
 import { discoverRepos, resolveRepo, listDirs } from "./repos.js";
 import { createRepoClone, getCurrentBranch } from "./git.js";
@@ -301,7 +301,19 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
       try {
         execSync(`docker volume inspect "${podVol}"`, { stdio: "ignore", timeout: 10000 });
         try {
-          execSync(`docker run --rm -v "${podVol}":/pgdata alpine test -f /pgdata/PG_VERSION`, {
+          execFileSync("docker", [
+            "run",
+            "--rm",
+            "--user",
+            "0:0",
+            "--entrypoint",
+            "test",
+            "-v",
+            `${podVol}:/pgdata`,
+            imageName,
+            "-f",
+            "/pgdata/PG_VERSION",
+          ], {
             stdio: "ignore",
             timeout: 15000,
           });
@@ -313,10 +325,21 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
         log("Cloning base database...");
         try { execSync(`docker volume rm "${podVol}"`, { stdio: "ignore", timeout: 10000 }); } catch { /* OK */ }
         execSync(`docker volume create "${podVol}"`, { stdio: "ignore", timeout: 10000 });
-        execSync(
-          `docker run --rm -v "${baseVol}":/from -v "${podVol}":/to "${imageName}" bash -c "cp -a /from/. /to/"`,
-          { stdio: "pipe", timeout: 120000 }
-        );
+        execFileSync("docker", [
+          "run",
+          "--rm",
+          "--user",
+          "0:0",
+          "--entrypoint",
+          "sh",
+          "-v",
+          `${baseVol}:/from:ro`,
+          "-v",
+          `${podVol}:/to`,
+          imageName,
+          "-c",
+          "cp -a /from/. /to/",
+        ], { stdio: "pipe", timeout: 120000 });
         log("Database cloned from base");
       }
     } catch { /* base volume doesn't exist, skip */ }

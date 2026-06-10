@@ -164,19 +164,21 @@ export const updateSharing = (
 
 export const fetchSnapshots = () => get<Snapshot[]>("/snapshots");
 
-export async function createSnapshot(
-  pod: string,
-  snapshot: string,
+// Stream an NDJSON endpoint, surfacing `{type:"log"}` lines via onProgress and
+// throwing on `{type:"error"}`. Shared by snapshot save/restore.
+async function streamNdjson(
+  path: string,
+  body: unknown,
   onProgress?: (msg: string) => void,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/snapshots/create`, {
+  const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pod, snapshot }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     let detail = "";
-    try { const body = await res.json(); detail = body.error || ""; } catch {}
+    try { const errBody = await res.json(); detail = errBody.error || ""; } catch {}
     throw new Error(detail || `API error: ${res.status}`);
   }
 
@@ -198,3 +200,15 @@ export async function createSnapshot(
     }
   }
 }
+
+export const createSnapshot = (
+  pod: string,
+  snapshot: string,
+  onProgress?: (msg: string) => void,
+): Promise<void> => streamNdjson("/snapshots/create", { pod, snapshot }, onProgress);
+
+export const restoreSnapshot = (
+  pod: string,
+  snapshot: string,
+  onProgress?: (msg: string) => void,
+): Promise<void> => streamNdjson("/snapshots/restore", { pod, snapshot }, onProgress);

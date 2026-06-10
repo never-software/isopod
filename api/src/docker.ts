@@ -13,6 +13,8 @@ import {
   layerSaveBustToken,
 } from "./layers.js";
 
+const BUILD_TIMEOUT_MS = 30 * 60 * 1000;
+
 function attachLineStream(stream: Readable | null, log: (msg: string) => void): () => void {
   if (!stream) return () => {};
   let remainder = "";
@@ -338,8 +340,8 @@ export async function buildImage(onLog?: (msg: string) => void, stack?: string):
 
       const timeout = setTimeout(() => {
         child.kill("SIGKILL");
-        reject(new Error("Build timed out after 10 minutes"));
-      }, 600000);
+        reject(new Error("Build timed out after 30 minutes"));
+      }, BUILD_TIMEOUT_MS);
 
       child.once("error", (err) => {
         clearTimeout(timeout);

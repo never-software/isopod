@@ -37,9 +37,11 @@ if docker volume inspect "$BASE_VOL" >/dev/null 2>&1; then
   echo "▸ Cloning base database..."
   docker volume create "$PROJECT_VOL" >/dev/null
   docker run --rm \
+    --user 0:0 \
+    --entrypoint sh \
     -v "$BASE_VOL":/from:ro \
     -v "$PROJECT_VOL":/to \
-    alpine sh -c "cp -a /from/. /to/"
+    "$WORKSPACE_IMAGE" -c "cp -a /from/. /to/"
   echo "✓ Database cloned"
 fi
 ```
