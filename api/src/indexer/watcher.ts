@@ -6,6 +6,7 @@ import { shouldIndex, createIgnoreFilter, INDEXABLE_EXTENSIONS } from "./ignore.
 import { indexFile, indexBase } from "./indexer.js";
 import { repoCollectionName, deleteByFilePath, getClient, upsertTombstones } from "./qdrant.js";
 import { getDeletedFiles } from "../git.js";
+import { requireDocker } from "../docker.js";
 import { listDirs, sleep } from "./utils.js";
 
 // ── Disabled targets ────────────────────────────────────────────────
@@ -38,11 +39,59 @@ export function toggleTarget(collectionName: string, branch: string): boolean {
 
 // ── Daemon management ────────────────────────────────────────────────
 
+const QDRANT_CONTAINER = "isopod-qdrant";
+const QDRANT_VOLUME = "isopod-qdrant-storage";
+const QDRANT_IMAGE = "qdrant/qdrant:v1.17.0";
+
+// When QDRANT_URL points at this machine, converge the local Qdrant container
+// to running before the watcher needs it. Remote URLs are left alone.
+function ensureQdrantContainer(): void {
+  const rawUrl = process.env.QDRANT_URL;
+  if (!rawUrl) return;
+
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return;
+  }
+  if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") return;
+
+  requireDocker();
+
+  let state: string | undefined;
+  try {
+    state = execSync(`docker inspect -f '{{.State.Running}}' "${QDRANT_CONTAINER}"`, {
+      encoding: "utf-8",
+      stdio: "pipe",
+      timeout: 10000,
+    }).trim();
+  } catch { /* container doesn't exist yet */ }
+
+  if (state === "true") return;
+
+  if (state === "false") {
+    console.log("Starting local Qdrant container...");
+    execSync(`docker start "${QDRANT_CONTAINER}"`, { stdio: "pipe", timeout: 30000 });
+    return;
+  }
+
+  const hostPort = url.port || "6333";
+  console.log(`Creating local Qdrant container (${QDRANT_IMAGE})...`);
+  execSync(
+    `docker run -d --name "${QDRANT_CONTAINER}" --restart unless-stopped ` +
+      `-p "127.0.0.1:${hostPort}:6333" -v "${QDRANT_VOLUME}:/qdrant/storage" "${QDRANT_IMAGE}"`,
+    { stdio: "pipe", timeout: 300000 }
+  );
+}
+
 export async function startDaemon(): Promise<void> {
   if (isDaemonRunning()) {
     console.log("Indexer daemon is already running.");
     return;
   }
+
+  ensureQdrantContainer();
 
   mkdirSync(config.tmpDir, { recursive: true });
 

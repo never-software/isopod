@@ -82,6 +82,13 @@ You are setting up isopod — a tool for creating parallel, isolated development
 - [ ] Create `docker.local/code-server/settings.json` with `"task.allowAutomaticTasks": "on"`
 - [ ] See [code-server.md](code-server.md) for details
 
+## Set up Qdrant (vector search)
+
+- [ ] Copy `indexer/.env.example` to `indexer/.env` and fill in `OPENAI_API_KEY`
+- [ ] Keep the default `QDRANT_URL=http://localhost:6333` — the indexer daemon auto-creates a local `isopod-qdrant` container (named volume, `--restart unless-stopped`) whenever the URL points at localhost
+- [ ] `QDRANT_API_KEY` only needs to be non-empty for a local instance (use a remote cluster URL + real key to opt out of local management)
+- [ ] Pods reach the host's Qdrant via `http://host.docker.internal:6333` — use that URL in `docker.local/.env` so the in-pod MCP search server shares the same store
+
 ## Test it
 
 - [ ] Run `./isopod build` and verify the image builds successfully
