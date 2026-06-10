@@ -3,6 +3,7 @@ import { execFileSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
 import { findPodStack, config, workspaceContainer } from "isopod-api";
+import { containerUserArgs } from "../container-user.js";
 import { error } from "../output.js";
 
 export const execCommand = new Command("exec")
@@ -29,7 +30,7 @@ export const execCommand = new Command("exec")
     const ttyFlags = process.stdin.isTTY ? ["-it"] : ["-i"];
 
     try {
-      execFileSync("docker", ["exec", ...ttyFlags, "-u", "dev", "-w", opts.dir, container, ...command], {
+      execFileSync("docker", ["exec", ...ttyFlags, ...containerUserArgs(container), "-w", opts.dir, container, ...command], {
         stdio: "inherit",
         timeout: 0,
       });

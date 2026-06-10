@@ -3,6 +3,7 @@ import { execFileSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
 import { findPodStack, config, workspaceContainer } from "isopod-api";
+import { containerUserArgs } from "../container-user.js";
 import { error } from "../output.js";
 
 export const enterCommand = new Command("enter")
@@ -33,7 +34,7 @@ export const enterCommand = new Command("enter")
     }
 
     try {
-      execFileSync("docker", ["exec", "-it", "-u", "dev", "-w", "/workspace", container, shell], {
+      execFileSync("docker", ["exec", "-it", ...containerUserArgs(container), "-w", "/workspace", container, shell], {
         stdio: "inherit",
         timeout: 0,
       });
