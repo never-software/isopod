@@ -36,6 +36,8 @@ services:
       # code-server settings and tasks
       - __DOCKER_DIR__/code-server:/root/.local/share/code-server/User:delegated
       - __DOCKER_DIR__/code-server/tasks.json:/workspace/.vscode/tasks.json:ro
+      # Generated service runner (from services.json) — pre-creates logs + starts services
+      - __DOCKER_DIR__/services-start.sh:/usr/local/bin/services-start.sh:ro
       # mkcert certificates (generate with: mkcert "*.orb.local" localhost 127.0.0.1)
       - __DOCKER_DIR__/certs:/certs:ro
       # Pod root mounted at /workspace. Stack workspace template files are copied

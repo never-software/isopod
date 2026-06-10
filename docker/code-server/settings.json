@@ -19,7 +19,5 @@
   "git.repositoryScanMaxDepth": 1,
   "workbench.colorTheme": "Default Dark Modern",
   "task.allowAutomaticTasks": "on",
-  "startupTerminals.terminals": [
-    { "name": "Dev Server", "command": "echo 'Configure your startup terminal commands in docker/code-server/settings.json'" }
-  ]
+  "startupTerminals.terminals": []
 }

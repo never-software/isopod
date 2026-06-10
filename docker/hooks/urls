@@ -1,14 +1,6 @@
 #!/bin/bash
-# hooks/urls — Output service URLs for display after create/up
-#
-# Called by: isopod create, isopod up
-# Env: FEATURE_NAME — the pod name (used as hostname with OrbStack)
-#
-# Output format: one line per service, tab-separated label and URL.
-# Example:
-#   printf "IDE\thttps://${FEATURE_NAME}.orb.local:8443\n"
-#   printf "API\thttp://${FEATURE_NAME}.orb.local:3000\n"
-
+# GENERATED from services.json — do not edit; edit services.json and re-run isopod up.
+# hooks/urls — service URLs for display after create/up (one per line: label<TAB>url).
 set -euo pipefail
 
-printf "IDE\thttps://${FEATURE_NAME}.orb.local:8443\n"
+printf '%s\t%s\n' IDE "https://ip-${STACK}-${FEATURE_NAME}.orb.local:8443"

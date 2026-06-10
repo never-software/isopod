@@ -18,7 +18,13 @@
   "workbench.colorTheme": "Default Dark Modern",
   "task.allowAutomaticTasks": "on",
   "startupTerminals.terminals": [
-    { "name": "Rails API", "command": "tail -f /tmp/rails.log" },
-    { "name": "Frontend", "command": "tail -f /tmp/vite.log" }
+    {
+      "name": "Rails API",
+      "command": "cd /workspace/example-api && tail -F /tmp/rails.log"
+    },
+    {
+      "name": "Frontend",
+      "command": "cd /workspace/example-frontend && tail -F /tmp/vite.log"
+    }
   ]
 }

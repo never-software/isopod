@@ -68,6 +68,16 @@ fi
 # ── Remove stale .git at /workspace (prevents phantom "workspace" repo in SCM)
 rm -rf /workspace/.git
 
+# ── Managed services (from services.json via services-start.sh) ───────────────
+# services-start.sh is generated host-side from services.json and bind-mounted.
+# Pre-create every service log NOW (before code-server boots) so the startup
+# terminals' `tail -F` attach to existing files instead of racing the services.
+SERVICES_RUNNER=/usr/local/bin/services-start.sh
+if [ -f "$SERVICES_RUNNER" ]; then
+  source "$SERVICES_RUNNER"
+  type precreate_logs &>/dev/null && precreate_logs || true
+fi
+
 # ── code-server (browser-based VS Code) ─────────────────────────────────────
 if command -v code-server &> /dev/null; then
   echo "Starting code-server on port 8443..."
@@ -112,6 +122,12 @@ if command -v code-server &> /dev/null; then
     --disable-telemetry \
     "$CODE_TARGET" &> /tmp/code-server.log &
   echo "code-server ready at https://$(hostname).orb.local:8443"
+fi
+
+# ── Start managed services (defined in services.json) ─────────────────────────
+if type start_services &>/dev/null; then
+  echo "Starting application services..."
+  start_services
 fi
 
 echo "Workspace ready"

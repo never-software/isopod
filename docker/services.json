@@ -1,0 +1,15 @@
+{
+  "_comment": "Single source of truth for this stack's dev services. On every `isopod up`, isopod regenerates code-server/settings.json (the startupTerminals.terminals key), code-server/tasks.json, services-start.sh, and hooks/urls from this file. Add one entry per long-running service. Service fields: id, displayName, port, protocol (http|https, default http), urlLabel (emit a URL line when set), workdir, logPath, startCommand, stopPort (default port), terminalCommand (override the default `tail -F`), tailInTerminal (default true), autoStart (default true). Top-level urlHost templates the URL host (default \"ip-${STACK}-${FEATURE_NAME}.orb.local\" — the container name, which OrbStack DNS resolves); ${STACK} is substituted when isopod generates the artifacts, ${FEATURE_NAME} when the urls hook runs. A service with no startCommand is listed for its URL/terminal only (e.g. the IDE).",
+  "urlHost": "ip-${STACK}-${FEATURE_NAME}.orb.local",
+  "services": [
+    {
+      "id": "ide",
+      "displayName": "IDE",
+      "port": 8443,
+      "protocol": "https",
+      "urlLabel": "IDE",
+      "tailInTerminal": false,
+      "autoStart": false
+    }
+  ]
+}
