@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import { createCommand } from "./commands/create.js";
 import { upCommand } from "./commands/up.js";
+import { recreateCommand } from "./commands/recreate.js";
 import { downCommand } from "./commands/down.js";
 import { execCommand } from "./commands/exec.js";
 import { enterCommand } from "./commands/enter.js";
@@ -32,6 +33,7 @@ program.addCommand(createCommand);
 program.addCommand(buildCommand);
 program.addCommand(freshDbSeedCommand);
 program.addCommand(upCommand);
+program.addCommand(recreateCommand);
 program.addCommand(downCommand);
 program.addCommand(execCommand);
 program.addCommand(enterCommand);

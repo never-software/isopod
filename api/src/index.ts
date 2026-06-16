@@ -45,7 +45,7 @@ export {
 } from "./layers.js";
 
 // Pods
-export { listPods, podExists, validatePodName, createPod, podUp, podDown, removePod, getRemoveWarnings, podStatus, findPodStack } from "./pods.js";
+export { listPods, podExists, validatePodName, createPod, podUp, podRecreate, podDown, removePod, getRemoveWarnings, podStatus, findPodStack } from "./pods.js";
 
 // Database
 export { dbSave, dbRestore, dbList, dbDelete } from "./db.js";

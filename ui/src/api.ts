@@ -70,6 +70,8 @@ export const podUp = (name: string, onProgress?: (msg: string) => void) =>
   streamAction(`/pods/${encodeURIComponent(name)}/up`, onProgress);
 export const podDown = (name: string, onProgress?: (msg: string) => void) =>
   streamAction(`/pods/${encodeURIComponent(name)}/down`, onProgress);
+export const podRecreate = (name: string, onProgress?: (msg: string) => void) =>
+  streamAction(`/pods/${encodeURIComponent(name)}/recreate`, onProgress);
 export const checkPodExists = (name: string) => get<{ exists: boolean }>(`/pods/${encodeURIComponent(name)}/exists`);
 export const podWarnings = (name: string) => get<RemoveWarning[]>(`/pods/${encodeURIComponent(name)}/warnings`);
 export const podRemove = (name: string, deleteFiles: boolean, onProgress?: (msg: string) => void) =>

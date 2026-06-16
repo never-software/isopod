@@ -3,7 +3,7 @@ import { execSync } from "child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync, truncateSync } from "fs";
 import { resolve, join, extname } from "path";
 import { config } from "./config.js";
-import { listPods, createPod, podUp, podDown, podExists, validatePodName, getRemoveWarnings, removePod } from "./pods.js";
+import { listPods, createPod, podUp, podRecreate, podDown, podExists, validatePodName, getRemoveWarnings, removePod } from "./pods.js";
 import { discoverRepos } from "./repos.js";
 import { defaultBranchFor, listRemoteBranches } from "./git.js";
 import { dbList, dbSave, dbRestore } from "./db.js";
@@ -147,6 +147,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<voi
 
     const upMatch = path.match(/^\/api\/pods\/(.+)\/up$/);
     if (upMatch) return apiPodUp(res, decodeURIComponent(upMatch[1]));
+
+    const recreateMatch = path.match(/^\/api\/pods\/(.+)\/recreate$/);
+    if (recreateMatch) return apiPodRecreate(res, decodeURIComponent(recreateMatch[1]));
 
     const downMatch = path.match(/^\/api\/pods\/(.+)\/down$/);
     if (downMatch) return apiPodDown(res, decodeURIComponent(downMatch[1]));
@@ -646,6 +649,17 @@ async function apiPodUp(res: ServerResponse, podName: string): Promise<void> {
       onLog: (msg) => res.write(JSON.stringify({ type: "log", message: msg }) + "\n"),
       waitForServices: false,
     });
+    res.write(JSON.stringify({ type: "done" }) + "\n");
+  } catch (error: any) {
+    res.write(JSON.stringify({ type: "error", message: error.message }) + "\n");
+  }
+  res.end();
+}
+
+async function apiPodRecreate(res: ServerResponse, podName: string): Promise<void> {
+  res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
+  try {
+    await podRecreate(podName, (msg) => res.write(JSON.stringify({ type: "log", message: msg }) + "\n"));
     res.write(JSON.stringify({ type: "done" }) + "\n");
   } catch (error: any) {
     res.write(JSON.stringify({ type: "error", message: error.message }) + "\n");

@@ -1,6 +1,6 @@
 import { For, Show, createSignal, createEffect, createResource, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { fetchPods, podUp, podDown, podWarnings, podRemove, fetchSettings } from "../../api";
+import { fetchPods, podUp, podDown, podRecreate, podWarnings, podRemove, fetchSettings } from "../../api";
 import type { Pod, RemoveWarning, ServicePort } from "../../types";
 import { CreatePodWizard } from "./CreatePodWizard";
 
@@ -37,12 +37,18 @@ export function PodList(props: { stack?: string }) {
     setLogs((prev) => [...prev, { time, message, error }]);
   }
 
-  async function handleAction(pod: Pod, action: "up" | "down") {
+  async function handleAction(pod: Pod, action: "up" | "down" | "recreate") {
+    const verb = action === "up" ? "Starting" : action === "recreate" ? "Recreating" : "Stopping";
+    const status = action === "up"
+      ? "Starting..."
+      : action === "recreate"
+        ? "Recreating on latest image..."
+        : "Stopping...";
     setActionPod(pod.name);
     setErrorInfo(null);
     setLogs([]);
-    setStatusMessage(action === "up" ? "Starting..." : "Stopping...");
-    appendLog(`${action === "up" ? "Starting" : "Stopping"} pod: ${pod.name}`);
+    setStatusMessage(status);
+    appendLog(`${verb} pod: ${pod.name}`);
     try {
       const onProgress = (msg: string) => {
         setStatusMessage(msg);
@@ -50,6 +56,8 @@ export function PodList(props: { stack?: string }) {
       };
       if (action === "up") {
         await podUp(pod.name, onProgress);
+      } else if (action === "recreate") {
+        await podRecreate(pod.name, onProgress);
       } else {
         await podDown(pod.name, onProgress);
       }
@@ -156,6 +164,7 @@ export function PodList(props: { stack?: string }) {
                               error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
                               onUp={() => handleAction(pod, "up")}
                               onDown={() => handleAction(pod, "down")}
+                              onRecreate={() => handleAction(pod, "recreate")}
                               onDelete={(deleteFiles) => handleDelete(pod, deleteFiles)}
                             />
                           )}
@@ -179,6 +188,7 @@ export function PodList(props: { stack?: string }) {
                     error={errorInfo()?.pod === pod.name ? errorInfo()!.message : null}
                     onUp={() => handleAction(pod, "up")}
                     onDown={() => handleAction(pod, "down")}
+                    onRecreate={() => handleAction(pod, "recreate")}
                     onDelete={(deleteFiles) => handleDelete(pod, deleteFiles)}
                   />
                 )}
@@ -238,6 +248,7 @@ function PodCard(props: {
   error: string | null;
   onUp: () => void;
   onDown: () => void;
+  onRecreate: () => void;
   onDelete: (deleteFiles: boolean) => void;
 }) {
   const isRunning = () => props.pod.container.state === "running";
@@ -298,6 +309,13 @@ function PodCard(props: {
                     Start
                   </button>
                   <button
+                    class="px-2.5 py-1 text-xs rounded bg-sky-900/50 text-sky-400 hover:bg-sky-900 transition-colors"
+                    onClick={props.onRecreate}
+                    title="Recreate container on the latest base image — keeps your code, database & shared home."
+                  >
+                    Recreate
+                  </button>
+                  <button
                     class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-red-400/70 hover:bg-red-900/30 hover:text-red-400 transition-colors"
                     onClick={handleDeleteClick}
                     disabled={loadingWarnings()}
@@ -307,12 +325,21 @@ function PodCard(props: {
                 </div>
               }
             >
-              <button
-                class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"
-                onClick={props.onDown}
-              >
-                Stop
-              </button>
+              <div class="flex items-center gap-1.5">
+                <button
+                  class="px-2.5 py-1 text-xs rounded bg-sky-900/50 text-sky-400 hover:bg-sky-900 transition-colors"
+                  onClick={props.onRecreate}
+                  title="Recreate container on the latest base image — keeps your code, database & shared home."
+                >
+                  Recreate
+                </button>
+                <button
+                  class="px-2.5 py-1 text-xs rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"
+                  onClick={props.onDown}
+                >
+                  Stop
+                </button>
+              </div>
             </Show>
           </Show>
         </div>

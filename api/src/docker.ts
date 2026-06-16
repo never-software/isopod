@@ -110,13 +110,18 @@ function sleep(ms: number): Promise<void> {
 /**
  * Docker compose up with retry on port conflicts.
  */
-export async function composeUp(project: string, composeFile: string): Promise<void> {
+export async function composeUp(
+  project: string,
+  composeFile: string,
+  opts: { forceRecreate?: boolean } = {}
+): Promise<void> {
   const maxRetries = 3;
+  const recreateFlag = opts.forceRecreate ? " --force-recreate" : "";
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       execSync(
-        `docker compose -p "${project}" -f "${composeFile}" up -d`,
+        `docker compose -p "${project}" -f "${composeFile}" up -d${recreateFlag}`,
         { encoding: "utf-8", timeout: 120000, stdio: "pipe" }
       );
       return;

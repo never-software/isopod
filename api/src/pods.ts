@@ -266,6 +266,8 @@ export interface PodUpOptions {
   onLog?: (msg: string) => void;
   waitForServices?: boolean;
   rebuildIfStale?: boolean;
+  /** Force `docker compose up` to recreate the container so it adopts the current image tag. */
+  forceRecreate?: boolean;
 }
 
 export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlInfo[]> {
@@ -367,7 +369,7 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
   generateServices(stackName);
 
   log("Starting container...");
-  await composeUp(project, composeFile);
+  await composeUp(project, composeFile, { forceRecreate: opts.forceRecreate });
 
   const container = workspaceContainer(name, stackName);
   await waitForContainer(container);
@@ -398,6 +400,18 @@ export async function podUp(name: string, opts: PodUpOptions = {}): Promise<UrlI
 
   if (opts.waitForServices === false) return [];
   return waitForUrls(name, undefined, dockerDir, log);
+}
+
+/**
+ * Recreate a pod's container so it adopts the current base image.
+ *
+ * A running pod's container stays pinned to the image ID it was created from, even after the
+ * `ipws-<stack>` tag is rebuilt to a newer image. This force-recreates the container on the current
+ * image without building anything — repos, the database volume, and the shared `/home/dev` overlay
+ * (incl. the Claude login) are all preserved because they live in named volumes / host bind-mounts.
+ */
+export async function podRecreate(name: string, onLog?: (msg: string) => void): Promise<UrlInfo[]> {
+  return podUp(name, { cloneDb: true, forceRecreate: true, onLog, waitForServices: false });
 }
 
 // ── Pod down ───────────────────────────────────────────────────────
