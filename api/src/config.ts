@@ -90,7 +90,7 @@ export const config = {
   get qdrantUrl() { return requireEnv("QDRANT_URL"); },
   get qdrantApiKey() { return requireEnv("QDRANT_API_KEY"); },
   get openaiApiKey() { return requireEnv("OPENAI_API_KEY"); },
-  get embeddingModel() { return process.env.EMBEDDING_MODEL || "text-embedding-3-small"; },
+  get embeddingModel() { return process.env.EMBEDDING_MODEL || "text-embedding-3-large"; },
   get embeddingDimensions() { return parseInt(process.env.EMBEDDING_DIMENSIONS || "1536", 10); },
 
   apiRoot,
