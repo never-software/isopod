@@ -2,6 +2,9 @@ tmp/
 dist/
 node_modules/
 
+# Local stack instances contain private repos, pods, auth/tool state, and
+# project-specific Docker config. Keep the implementation in api/cli/ui/docker;
+# never stage stacks/**.
 /stacks/
 .generated.Dockerfile
 *.pem

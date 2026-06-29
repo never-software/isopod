@@ -93,6 +93,13 @@ Each pod runs [code-server](https://github.com/coder/code-server) for a browser-
 
 See the [installation guide](docs/install/index.md) for full setup, or if you're using an AI coding assistant, hand it the [AI setup checklist](docs/install/ai-setup-checklist.md).
 
+For maintainers and coding agents working on isopod itself, start with
+[`AGENTS.md`](AGENTS.md), [`docs/architecture.md`](docs/architecture.md),
+[`docs/development.md`](docs/development.md), and
+[`docs/stack-templates.md`](docs/stack-templates.md). Those docs explain the
+tracked source vs local `stacks/**` boundary and the current TypeScript package
+layout.
+
 ## Roadmap
 
 - Multiple pod configurations for different stacks
