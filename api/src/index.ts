@@ -47,6 +47,54 @@ export {
 // Pods
 export { listPods, podExists, validatePodName, createPod, podUp, podRecreate, podDown, removePod, getRemoveWarnings, podStatus, findPodStack } from "./pods.js";
 
+// Offload backend
+export {
+  OFFLOAD_SCHEMA_VERSION,
+  OFFLOAD_MANAGED_LABEL,
+  OFFLOAD_BACKEND_LABEL,
+  OFFLOAD_STACK_LABEL,
+  OFFLOAD_POD_LABEL,
+  OFFLOAD_PROFILE_LABEL,
+  OffloadError,
+  offloadJsonOk,
+  offloadJsonError,
+  parseNameValueOption,
+  parseRepoRefOptions,
+  offloadRoots,
+  offloadPaths,
+  createOffloadPod,
+  upOffloadPod,
+  execOffloadPod,
+  renewOffloadLease,
+  stopOffloadPod,
+  removeOffloadPod,
+  statusOffloadPods,
+  doctorOffload,
+  expireOffloadLeases,
+  handleOffloadPressure,
+  stopAllOffloadPods,
+  generateOffloadCompose,
+} from "./offload.js";
+export type {
+  OffloadOperation,
+  OffloadPodState,
+  CommandResult,
+  CommandOptions,
+  CommandRunner,
+  FilesystemProbe,
+  OffloadRuntimeDeps,
+  OffloadRoots,
+  OffloadPaths,
+  OffloadRepoRequest,
+  OffloadResolvedRepo,
+  OffloadResources,
+  OffloadProfile,
+  OffloadPodMetadata,
+  OffloadRunningContainer,
+  OffloadJsonSuccess,
+  OffloadJsonFailure,
+} from "./offload.js";
+
 // Database
 export { dbSave, dbRestore, dbList, dbDelete } from "./db.js";
 

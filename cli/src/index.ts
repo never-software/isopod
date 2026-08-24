@@ -21,6 +21,7 @@ import { indexCommand } from "./commands/index-cmd.js";
 import { searchCommand } from "./commands/search.js";
 import { sharingCommand, homeSharingCommand } from "./commands/sharing.js";
 import { dashboardCommand } from "./commands/dashboard.js";
+import { offloadCommand } from "./commands/offload.js";
 
 const program = new Command();
 
@@ -50,5 +51,6 @@ program.addCommand(searchCommand);
 program.addCommand(sharingCommand);
 program.addCommand(homeSharingCommand);
 program.addCommand(dashboardCommand);
+program.addCommand(offloadCommand);
 
 program.parse();

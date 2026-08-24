@@ -6,7 +6,7 @@ import { existsSync, readdirSync } from "fs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const apiRoot = resolve(__dirname, "..");
 
-function findIsopodRoot(): string {
+export function resolveIsopodRoot(env: NodeJS.ProcessEnv = process.env): string {
   let dir = apiRoot;
   for (let i = 0; i < 5; i++) {
     if (existsSync(resolve(dir, "isopod")) && (existsSync(resolve(dir, "stacks")) || existsSync(resolve(dir, "repos")))) {
@@ -14,7 +14,19 @@ function findIsopodRoot(): string {
     }
     dir = resolve(dir, "..");
   }
-  return process.env.ISOPOD_ROOT || resolve(apiRoot, "..");
+  return env.ISOPOD_ROOT || resolve(apiRoot, "..");
+}
+
+export function resolveAssetRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return env.ISOPOD_ASSET_ROOT ? resolve(env.ISOPOD_ASSET_ROOT) : resolveIsopodRoot(env);
+}
+
+export function resolveStateRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return env.ISOPOD_STATE_ROOT ? resolve(env.ISOPOD_STATE_ROOT) : resolveIsopodRoot(env);
+}
+
+export function shouldLoadLocalEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !env.ISOPOD_ASSET_ROOT && !env.ISOPOD_STATE_ROOT;
 }
 
 function requireEnv(name: string): string {
@@ -29,7 +41,9 @@ function requireEnv(name: string): string {
 
 // Load .env from multiple possible locations
 function loadEnv(): void {
-  const root = findIsopodRoot();
+  if (!shouldLoadLocalEnv()) return;
+
+  const root = resolveIsopodRoot();
   // Try root .env first, then api/.env, then indexer/.env (legacy)
   for (const dir of [root, apiRoot, resolve(root, "indexer")]) {
     const envPath = resolve(dir, ".env");
@@ -43,7 +57,9 @@ function loadEnv(): void {
 loadEnv();
 
 export const config = {
-  get isopodRoot() { return findIsopodRoot(); },
+  get isopodRoot() { return resolveIsopodRoot(); },
+  get assetRoot() { return resolveAssetRoot(); },
+  get stateRoot() { return resolveStateRoot(); },
   get projectName() { return basename(this.isopodRoot); },
   get stacksDir() { return resolve(this.isopodRoot, "stacks"); },
 
@@ -94,13 +110,13 @@ export const config = {
   get embeddingDimensions() { return parseInt(process.env.EMBEDDING_DIMENSIONS || "1536", 10); },
 
   apiRoot,
-  tmpDir: resolve(findIsopodRoot(), "tmp"),
+  tmpDir: resolve(resolveIsopodRoot(), "tmp"),
 
   // Indexer file paths
   get pidFile() { return resolve(this.tmpDir, "indexer.pid"); },
   get logFile() { return resolve(this.tmpDir, "indexer.log"); },
   get settingsFile() { return resolve(this.tmpDir, "indexer-settings.json"); },
-  disabledTargetsFile: resolve(findIsopodRoot(), ".indexer-disabled-targets.json"),
+  disabledTargetsFile: resolve(resolveIsopodRoot(), ".indexer-disabled-targets.json"),
 
   // Chunking
   maxChunkTokens: 500,
