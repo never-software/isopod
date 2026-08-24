@@ -7,8 +7,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "tsc && node --test \"dist/**/*.test.js\" test/services.test.mjs",
-    "postinstall": "clang -O2 -o bin/clone bin/clone.c || true"
+    "test": "tsc && node --test \"dist/**/*.test.js\" test/services.test.mjs test/clone-helper.test.mjs",
+    "postinstall": "node scripts/build-clone-helper.mjs"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.13.0",
