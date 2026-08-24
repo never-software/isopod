@@ -9,6 +9,7 @@ Use this checklist before making non-trivial changes to isopod.
 - Read `docs/development.md` for build/test commands.
 - Read `docs/stack-templates.md` before touching stack, Docker, sharing, or
   pod-template behavior.
+- Read `docs/offload.md` before touching the source-only Offload backend.
 - Verify current code instead of trusting old shell-era notes.
 
 ## Git Safety
@@ -30,6 +31,8 @@ Use this checklist before making non-trivial changes to isopod.
   - private runtime config belongs under ignored `stacks/<stack>/...`.
 - Use structured parsers or existing helpers for config where available.
 - Keep changes scoped to the requested behavior.
+- Keep `isopod offload` separate from the ordinary local pod commands and the
+  dashboard.
 
 ## Verification
 

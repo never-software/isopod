@@ -28,6 +28,12 @@ CLI can import the compiled API package.
 pod lifecycle, Docker/image helpers, DB/cache operations, sharing utilities,
 search/indexer entry points, and server startup.
 
+The `isopod offload` subgroup is a separate CLI-only backend for source-only
+server pods on an Offload host. Its implementation lives in `api/src/offload.ts`
+and `cli/src/commands/offload.ts`; it does not drive the dashboard and does not
+reuse the local OrbStack `create`/`up`/`remove` lifecycle. See
+`docs/offload.md` for its Git-only, no-state-transfer contract.
+
 ## Source vs Local State
 
 The tracked repo contains the implementation. The local `stacks/` directory

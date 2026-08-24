@@ -41,6 +41,11 @@ Run the CLI from the repo root after building `api` and `cli`:
 ./isopod <command>
 ```
 
+The Nix flake packages only the TypeScript API and CLI plus immutable Offload
+assets for `x86_64-linux`; it deliberately does not build `ui/` or the
+dashboard bundle. Package installation compiles the native clone helper and
+fails if that compilation fails; unsupported silent success is not allowed.
+
 ## Tests
 
 The main automated test suite is in `api`.
@@ -80,6 +85,27 @@ Common stack-scoped commands:
 
 Some pod-name commands can discover the stack from an existing pod name, but
 being explicit is safer in scripts and docs.
+
+## Offload Commands
+
+The Offload backend is separate from the ordinary local commands and is meant to
+run on the Offload host through the external lock wrapper:
+
+```bash
+isopod offload create <stack> <pod> --repo <name>=<remote-url> --ref <name>=refs/heads/<branch> --json
+isopod offload up <stack> <pod> --json
+isopod offload exec <stack> <pod> --json -- <command...>
+isopod offload status [<stack> <pod>] --json
+isopod offload lease <stack> <pod> --json
+isopod offload stop <stack> <pod> --json
+isopod offload remove <stack> <pod> --json
+```
+
+Mutating Offload operations require `ISOPOD_OFFLOAD_LOCK_HELD=1`, set only by
+the wrapper that owns the single host `flock`. Offload stores mutable state
+under `ISOPOD_STATE_ROOT` and immutable assets under `ISOPOD_ASSET_ROOT`; when
+those roots are set, checkout `.env` files are not loaded. See
+`docs/offload.md` for the full source-only contract.
 
 ## Docker Context
 
